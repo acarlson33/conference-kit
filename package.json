@@ -9,7 +9,7 @@
     "examples/*"
   ],
   "scripts": {
-    "build": "bun run --cwd packages/core build && bun run --cwd packages/react build && bun run --cwd packages/nextjs build && bun run --cwd packages/signaling-server build",
+    "build": "bun run --cwd packages/core build && bun run --cwd packages/react build && bun run --cwd packages/nextjs build && bun run --cwd packages/signaling-server build && bun run --cwd packages/vue build",
     "dev:signal": "bun run --cwd packages/signaling-server dev"
   }
 }

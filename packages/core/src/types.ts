@@ -8,6 +8,7 @@ export interface PeerConfig {
   config?: RTCConfiguration;
   channelLabel?: string;
   trickle?: boolean;
+  enableDataChannel?: boolean;
 }
 
 export interface PeerEvents {

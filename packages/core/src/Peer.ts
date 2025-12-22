@@ -57,6 +57,7 @@ export class Peer implements PeerControls {
     config,
     channelLabel = "data",
     trickle = true,
+    enableDataChannel = true,
   }: PeerConfig) {
     this.side = side;
     this.trickle = trickle;
@@ -68,7 +69,7 @@ export class Peer implements PeerControls {
       }
     }
 
-    if (side === "initiator") {
+    if (side === "initiator" && enableDataChannel) {
       this.dataChannel = this.pc.createDataChannel(channelLabel);
       this.wireDataChannel(this.dataChannel);
     } else {

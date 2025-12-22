@@ -3,10 +3,7 @@ import {
   ErrorBanner,
   StatusBadge,
   VideoPlayer,
-  useCall,
-  useCallState,
-  useDataChannelMessages,
-  useMediaStream,
+  useMeshRoom,
 } from "@webrtc-kit/react";
 
 const primaryButton = {
@@ -56,15 +53,235 @@ const deriveDefaultUrl = () => {
 
 const defaultUrl = deriveDefaultUrl();
 const randomId = () => Math.random().toString(36).slice(2, 8);
+const defaultRoom = "lobby";
+
+type RoomExperienceProps = {
+  peerId: string;
+  room: string;
+  signalingUrl: string;
+  includeAudio: boolean;
+  includeVideo: boolean;
+  onLeave: () => void;
+};
+
+function RoomExperience({
+  peerId,
+  room,
+  signalingUrl,
+  includeAudio,
+  includeVideo,
+  onLeave,
+}: RoomExperienceProps) {
+  const mesh = useMeshRoom({
+    peerId,
+    room,
+    signalingUrl,
+    mediaConstraints: { audio: includeAudio, video: includeVideo },
+    autoReconnect: true,
+  });
+
+  const activeError = mesh.mediaError?.message || mesh.error?.message || null;
+  useEffect(() => () => mesh.leave(), [mesh.leave]);
+
+  const tiles = useMemo(() => {
+    const remotes = mesh.participants.map((p) => ({
+      id: p.id,
+      stream: p.remoteStream,
+      connection: p.connectionState,
+    }));
+    return [
+      {
+        id: peerId,
+        label: "You",
+        stream: mesh.localStream,
+        connection: mesh.ready ? "connected" : "new",
+      },
+      ...remotes.map((p) => ({
+        id: p.id,
+        label: p.id,
+        stream: p.stream,
+        connection: p.connection,
+      })),
+    ];
+  }, [mesh.localStream, mesh.participants, mesh.ready, peerId]);
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      {activeError && <ErrorBanner message={activeError} />}
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: "#111827",
+          border: "1px solid #1f2937",
+          borderRadius: 12,
+          padding: 12,
+        }}
+      >
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <StatusBadge label={`Room ${room}`} tone="neutral" />
+          <StatusBadge label={`Roster ${mesh.roster.length}`} tone="neutral" />
+          <StatusBadge
+            label={`Peers ${mesh.participants.length}`}
+            tone="neutral"
+          />
+          <StatusBadge
+            label={`Signal ${mesh.signalingStatus}`}
+            tone={mesh.signalingStatus === "open" ? "success" : "warn"}
+          />
+          <StatusBadge
+            label={
+              mesh.ready
+                ? "Media ready"
+                : mesh.requesting
+                ? "Requesting"
+                : "No media"
+            }
+            tone={mesh.ready ? "success" : mesh.requesting ? "warn" : "neutral"}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => mesh.requestStream()} style={primaryButton}>
+            Request Media
+          </button>
+          <button onClick={() => mesh.stopStream()} style={ghostButton}>
+            Release Media
+          </button>
+          <button onClick={() => onLeave()} style={secondaryButton}>
+            Leave Room
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: 12,
+          gridTemplateColumns: "1.6fr 1fr",
+          alignItems: "start",
+        }}
+      >
+        <div
+          style={{
+            background: "#111827",
+            border: "1px solid #1f2937",
+            borderRadius: 12,
+            padding: 14,
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <div style={{ fontWeight: 600 }}>Participants</div>
+            <StatusBadge label={`${tiles.length} tiles`} tone="neutral" />
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {tiles.map((tile) => (
+              <div
+                key={tile.id}
+                style={{
+                  background: "#0b1220",
+                  border: "1px solid #1f2937",
+                  borderRadius: 10,
+                  padding: 10,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ fontWeight: 600 }}>{tile.label}</div>
+                  <StatusBadge label={tile.connection} tone="neutral" />
+                </div>
+                <VideoPlayer
+                  stream={tile.stream}
+                  style={{
+                    width: "100%",
+                    background: "#030712",
+                    borderRadius: 8,
+                    minHeight: 120,
+                  }}
+                  muted={tile.id === peerId}
+                />
+              </div>
+            ))}
+            {tiles.length === 0 && (
+              <div style={{ color: "#94a3b8" }}>Waiting for participants…</div>
+            )}
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: "#111827",
+            border: "1px solid #1f2937",
+            borderRadius: 12,
+            padding: 14,
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>Roster</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {mesh.roster.length === 0 && (
+              <div style={{ color: "#94a3b8" }}>No peers joined yet</div>
+            )}
+            {mesh.roster.map((id) => (
+              <div
+                key={id}
+                style={{
+                  border: "1px solid #1f2937",
+                  borderRadius: 8,
+                  padding: "8px 10px",
+                  background: id === peerId ? "#0f172a" : "#0b1220",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{id}</span>
+                <StatusBadge
+                  label={id === peerId ? "You" : "Peer"}
+                  tone={id === peerId ? "success" : "neutral"}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function App() {
   const [peerId] = useState(() => randomId());
-  const [targetId, setTargetId] = useState("");
   const [signalingUrl, setSignalingUrl] = useState(defaultUrl);
   const [clientError, setClientError] = useState<string | null>(null);
   const [includeAudio, setIncludeAudio] = useState(true);
   const [includeVideo, setIncludeVideo] = useState(true);
-  const [messageText, setMessageText] = useState("ping");
+  const [room, setRoom] = useState(defaultRoom);
+  const [joined, setJoined] = useState(false);
 
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
@@ -84,32 +301,7 @@ export function App() {
     };
   }, []);
 
-  const call = useCall({
-    peerId,
-    signalingUrl,
-    mediaConstraints: { audio: includeAudio, video: includeVideo },
-  });
-
-  const media = useMediaStream({
-    constraints: { audio: includeAudio, video: includeVideo },
-  });
-
-  const data = useDataChannelMessages(call.peer, { limit: 50 });
-  const callView = useCallState(call, { hasTarget: Boolean(targetId) });
-
-  const activeError =
-    clientError ||
-    call.error?.message ||
-    data.error?.message ||
-    media.error?.message ||
-    null;
-
-  const mediaMode = useMemo(() => {
-    if (includeAudio && includeVideo) return "AV";
-    if (includeAudio && !includeVideo) return "Audio";
-    if (!includeAudio && includeVideo) return "Video";
-    return "Data";
-  }, [includeAudio, includeVideo]);
+  const activeError = clientError;
 
   return (
     <div
@@ -138,18 +330,17 @@ export function App() {
           }}
         >
           <div>
-            <div style={{ fontSize: 24, fontWeight: 700 }}>WebRTC Call</div>
+            <div style={{ fontSize: 24, fontWeight: 700 }}>Mesh Room</div>
             <div style={{ color: "#94a3b8" }}>
-              Secure origin required for media; data-only works without devices
+              Join a named room and mesh-connect to everyone present
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <StatusBadge label={`Call ${callView.callLabel}`} tone="neutral" />
-            <StatusBadge label={`Conn ${callView.connLabel}`} tone="neutral" />
-            <StatusBadge label={`ICE ${callView.iceLabel}`} tone="neutral" />
+            <StatusBadge label={`Peer ${peerId}`} tone="neutral" />
+            <StatusBadge label={`Room ${room}`} tone="neutral" />
             <StatusBadge
-              label={data.ready ? "Data ready" : "Data idle"}
-              tone={data.ready ? "success" : "neutral"}
+              label={joined ? "Joined" : "Idle"}
+              tone={joined ? "success" : "neutral"}
             />
           </div>
         </header>
@@ -206,9 +397,7 @@ export function App() {
                 </div>
               </div>
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ color: "#94a3b8", fontSize: 13 }}>
-                  Target ID
-                </span>
+                <span style={{ color: "#94a3b8", fontSize: 13 }}>Room</span>
                 <input
                   style={{
                     width: "100%",
@@ -218,9 +407,9 @@ export function App() {
                     background: "#0b1220",
                     color: "#e2e8f0",
                   }}
-                  value={targetId}
-                  onChange={(e) => setTargetId(e.target.value)}
-                  placeholder="Paste the other peer ID"
+                  value={room}
+                  onChange={(e) => setRoom(e.target.value)}
+                  placeholder="e.g. lobby"
                 />
               </label>
             </div>
@@ -242,66 +431,35 @@ export function App() {
                 />
                 Video
               </label>
-              <StatusBadge label={`${mediaMode} mode`} tone="neutral" />
+              <StatusBadge
+                label={
+                  includeAudio && includeVideo
+                    ? "AV"
+                    : includeAudio
+                    ? "Audio"
+                    : includeVideo
+                    ? "Video"
+                    : "Data"
+                }
+                tone="neutral"
+              />
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
-                onClick={() => media.requestStream()}
+                onClick={() => setJoined(true)}
                 style={primaryButton}
+                disabled={!room.trim()}
               >
-                Request Media
-              </button>
-              <button onClick={() => media.stopStream()} style={ghostButton}>
-                Release Media
+                Join Room
               </button>
               <button
-                onClick={() => call.call(targetId)}
-                disabled={!callView.canCall}
-                style={primaryButton}
-              >
-                Call
-              </button>
-              <button
-                onClick={() => call.answer()}
-                disabled={!callView.canAnswer}
-                style={secondaryButton}
-              >
-                Answer
-              </button>
-              <button
-                onClick={() => call.hangUp()}
-                disabled={!callView.canHangUp}
+                onClick={() => setJoined(false)}
                 style={ghostButton}
+                disabled={!joined}
               >
-                Hang Up
+                Leave
               </button>
-              <button onClick={() => call.reset()} style={ghostButton}>
-                Reset Peer
-              </button>
-              <button onClick={() => call.muteAudio(true)} style={ghostButton}>
-                Mute A
-              </button>
-              <button onClick={() => call.muteAudio(false)} style={ghostButton}>
-                Unmute A
-              </button>
-              <button onClick={() => call.muteVideo(true)} style={ghostButton}>
-                Mute V
-              </button>
-              <button onClick={() => call.muteVideo(false)} style={ghostButton}>
-                Unmute V
-              </button>
-            </div>
-
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <StatusBadge
-                label={`Peer ${call.peer ? "ready" : "idle"}`}
-                tone={call.peer ? "success" : "neutral"}
-              />
-              <StatusBadge
-                label={`Media ${media.ready ? "ready" : "not ready"}`}
-                tone={media.ready ? "success" : "warn"}
-              />
             </div>
           </section>
 
@@ -316,141 +474,33 @@ export function App() {
             }}
           >
             <div style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div>Local</div>
-                <StatusBadge label="Muted locally" tone="neutral" />
+              <div style={{ fontWeight: 600 }}>How it works</div>
+              <div style={{ color: "#94a3b8", lineHeight: 1.5 }}>
+                Each peer connects to the signaling server, announces presence,
+                and builds a mesh connection to everyone else in the same room.
+                Hit Join Room on multiple tabs to see the roster and tiles
+                populate. Use HTTPS for media capture if your browser requires a
+                secure origin.
               </div>
-              <VideoPlayer
-                stream={media.stream ?? call.localStream}
-                style={{
-                  width: "100%",
-                  background: "#0b1220",
-                  borderRadius: 8,
-                }}
-                muted
-              />
-            </div>
-            <div style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div>Remote</div>
-                <StatusBadge
-                  label={call.remoteStream ? "Receiving" : "Idle"}
-                  tone="neutral"
-                />
-              </div>
-              <VideoPlayer
-                stream={call.remoteStream}
-                style={{
-                  width: "100%",
-                  background: "#0b1220",
-                  borderRadius: 8,
-                }}
-              />
             </div>
           </section>
         </div>
 
-        <section
-          style={{
-            background: "#111827",
-            border: "1px solid #1f2937",
-            borderRadius: 12,
-            padding: 16,
-            display: "grid",
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 600 }}>Data Channel</div>
-              <div style={{ color: "#94a3b8", fontSize: 13 }}>
-                Data-only mode works without camera/mic
-              </div>
-            </div>
-            <StatusBadge
-              label={data.ready ? "Open" : "Closed"}
-              tone={data.ready ? "success" : "neutral"}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input
-              value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
-              placeholder="Message"
-              style={{
-                flex: "1 1 280px",
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid #334155",
-                background: "#0b1220",
-                color: "#e2e8f0",
-              }}
-            />
-            <button
-              onClick={() => data.sendMessage(messageText || "ping")}
-              disabled={!data.ready}
-              style={primaryButton}
-            >
-              Send
-            </button>
-          </div>
-          <div
-            style={{
-              maxHeight: 200,
-              overflow: "auto",
-              display: "grid",
-              gap: 8,
-              background: "#0b1220",
-              padding: 12,
-              borderRadius: 8,
-              border: "1px solid #1f2937",
-            }}
-          >
-            {data.messages.length === 0 && (
-              <div style={{ color: "#94a3b8" }}>No messages yet</div>
-            )}
-            {data.messages.map(
-              (msg: {
-                id: string;
-                direction: "in" | "out";
-                payload: unknown;
-              }) => (
-                <div
-                  key={msg.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    background: msg.direction === "in" ? "#0f172a" : "#111827",
-                  }}
-                >
-                  <span style={{ color: "#cbd5e1" }}>
-                    {typeof msg.payload === "string"
-                      ? msg.payload
-                      : JSON.stringify(msg.payload)}
-                  </span>
-                  <StatusBadge
-                    label={msg.direction === "in" ? "In" : "Out"}
-                    tone={msg.direction === "in" ? "neutral" : "success"}
-                  />
-                </div>
-              )
-            )}
-          </div>
-        </section>
+        {joined && (
+          <RoomExperience
+            peerId={peerId}
+            room={room || defaultRoom}
+            signalingUrl={signalingUrl}
+            includeAudio={includeAudio}
+            includeVideo={includeVideo}
+            onLeave={() => setJoined(false)}
+          />
+        )}
 
         <section style={{ color: "#94a3b8", fontSize: 13 }}>
           HTTPS/LAN: use `VITE_DEV_HTTPS=true bun run dev` or Chrome flag
           `--unsafely-treat-insecure-origin-as-secure=http://your-lan:5173` for
-          media. Data-only works over HTTP.
+          media capture.
         </section>
       </div>
     </div>

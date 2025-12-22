@@ -44,7 +44,16 @@ type IncomingMessage = SignalPayload | BroadcastPayload;
 type OutgoingMessage =
   | { type: "signal"; from: string; data: unknown }
   | { type: "broadcast"; from: string; room?: string | null; data: unknown }
+  | PresenceMessage
   | { type: "error"; message: string };
+
+type PresenceMessage = {
+  type: "presence";
+  room?: string | null;
+  peerId: string;
+  peers: string[];
+  action: "join" | "leave";
+};
 
 function parseMessage(raw: string): IncomingMessage | null {
   try {
@@ -61,7 +70,10 @@ function parseMessage(raw: string): IncomingMessage | null {
 const HOST = "0.0.0.0";
 const PORT = 8787;
 
-const server = Bun.serve<ClientMeta>({
+const roomMembers = new Map<string, Set<string>>();
+
+// Signaling server with simple room presence
+const liveServer = Bun.serve<ClientMeta>({
   hostname: HOST,
   port: PORT,
   fetch(req: Request, bunServer: Server<ClientMeta>) {
@@ -84,7 +96,22 @@ const server = Bun.serve<ClientMeta>({
     open(ws: ServerWebSocket<ClientMeta>) {
       const { peerId, room } = ws.data;
       ws.subscribe(`peer:${peerId}`);
-      if (room) ws.subscribe(`room:${room}`);
+      if (room) {
+        ws.subscribe(`room:${room}`);
+        const set = roomMembers.get(room) ?? new Set<string>();
+        set.add(peerId);
+        roomMembers.set(room, set);
+        const presence: PresenceMessage = {
+          type: "presence",
+          room,
+          peerId,
+          peers: Array.from(set),
+          action: "join",
+        };
+        // Publish to everyone in the room and also send directly so the new peer gets an immediate roster snapshot.
+        ws.publish(`room:${room}`, JSON.stringify(presence));
+        ws.send(JSON.stringify(presence));
+      }
     },
     message(
       ws: ServerWebSocket<ClientMeta>,
@@ -128,12 +155,31 @@ const server = Bun.serve<ClientMeta>({
     close(ws: ServerWebSocket<ClientMeta>) {
       const { peerId, room } = ws.data;
       ws.unsubscribe(`peer:${peerId}`);
-      if (room) ws.unsubscribe(`room:${room}`);
+      if (room) {
+        ws.unsubscribe(`room:${room}`);
+        const set = roomMembers.get(room);
+        if (set) {
+          set.delete(peerId);
+          if (set.size === 0) {
+            roomMembers.delete(room);
+          } else {
+            roomMembers.set(room, set);
+          }
+          const presence: PresenceMessage = {
+            type: "presence",
+            room,
+            peerId,
+            peers: Array.from(set),
+            action: "leave",
+          };
+          ws.publish(`room:${room}`, JSON.stringify(presence));
+        }
+      }
     },
   },
 });
 
-console.log(`Signaling server running on ws://localhost:${server.port}`);
+console.log(`Signaling server running on ws://localhost:${liveServer.port}`);
 console.log(
-  `LAN access (if allowed by firewall): ws://<your-lan-ip>:${server.port}`
+  `LAN access (if allowed by firewall): ws://<your-lan-ip>:${liveServer.port}`
 );

@@ -1,4 +1,4 @@
-export type EventMap = {
+type EventMap = {
   open: void;
   close: CloseEvent | undefined;
   error: Error;
