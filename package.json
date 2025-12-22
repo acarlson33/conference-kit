@@ -1,0 +1,15 @@
+{
+  "name": "webrtc-video-voice-calls",
+  "version": "0.0.1",
+  "private": true,
+  "packageManager": "bun@1.3.5",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "bun run --cwd packages/core build && bun run --cwd packages/react build && bun run --cwd packages/nextjs build && bun run --cwd packages/signaling-server build",
+    "dev:signal": "bun run --cwd packages/signaling-server dev"
+  }
+}
