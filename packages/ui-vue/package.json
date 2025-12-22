@@ -1,5 +1,5 @@
 {
-  "name": "@webrtc-kit/react",
+  "name": "@webrtc-kit/ui-vue",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,14 +13,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
+  "peerDependencies": {
+    "vue": "^3.4.0",
+    "tailwindcss": ">=3.4.0"
+  },
   "dependencies": {
+    "@webrtc-kit/vue": "^0.0.1",
     "@webrtc-kit/core": "^0.0.1"
   },
-  "peerDependencies": {
-    "react": ">=18.2.0"
-  },
   "devDependencies": {
-    "@types/react": "^18.3.27",
     "typescript": "^5.9.3"
   }
 }

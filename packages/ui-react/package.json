@@ -1,5 +1,5 @@
 {
-  "name": "@webrtc-kit/react",
+  "name": "@webrtc-kit/ui-react",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,14 +13,18 @@
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
-  "dependencies": {
-    "@webrtc-kit/core": "^0.0.1"
-  },
   "peerDependencies": {
-    "react": ">=18.2.0"
+    "react": ">=18.2.0",
+    "react-dom": ">=18.2.0",
+    "tailwindcss": ">=3.4.0"
+  },
+  "dependencies": {
+    "@webrtc-kit/react": "^0.0.1",
+    "@webrtc-kit/core": "^0.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.7",
     "typescript": "^5.9.3"
   }
 }

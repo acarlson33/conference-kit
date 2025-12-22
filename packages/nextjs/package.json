@@ -14,7 +14,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@webrtc-kit/react": "workspace:*"
+    "@webrtc-kit/react": "^0.0.1"
   },
   "peerDependencies": {
     "next": ">=13.0.0",

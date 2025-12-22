@@ -55,6 +55,13 @@ const defaultUrl = deriveDefaultUrl();
 const randomId = () => Math.random().toString(36).slice(2, 8);
 const defaultRoom = "lobby";
 
+const deriveLocalUrl = () => {
+  if (typeof window === "undefined") return defaultUrl;
+  const isSecure = window.location.protocol === "https:";
+  const host = window.location.hostname || "localhost";
+  return `${isSecure ? "wss" : "ws"}://${host}:8787`;
+};
+
 type RoomExperienceProps = {
   peerId: string;
   room: string;
@@ -84,6 +91,31 @@ function RoomExperience({
   useEffect(() => () => mesh.leave(), [mesh.leave]);
 
   const tiles = useMemo(() => {
+    <div style={{ display: "grid", gap: 6 }}>
+      <div style={{ fontWeight: 600 }}>Connection tips</div>
+      <ul
+        style={{
+          paddingLeft: 18,
+          margin: 0,
+          color: "#94a3b8",
+          lineHeight: 1.5,
+        }}
+      >
+        <li>Start signaling: `bun run dev:signal` (default ws://host:8787)</li>
+        <li>
+          If the Signal badge is not green, the WebSocket isn’t reachable
+          (firewall/host/port).
+        </li>
+        <li>
+          For HTTPS pages use wss:// and a cert on the signaling host, or run
+          the page over HTTP.
+        </li>
+        <li>
+          Media capture needs a secure origin in most browsers; data-only works
+          on HTTP.
+        </li>
+      </ul>
+    </div>;
     const remotes = mesh.participants.map((p) => ({
       id: p.id,
       stream: p.remoteStream,
@@ -381,6 +413,17 @@ export function App() {
                   value={signalingUrl}
                   onChange={(e) => setSignalingUrl(e.target.value)}
                 />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    style={ghostButton}
+                    onClick={() => setSignalingUrl(deriveLocalUrl())}
+                  >
+                    Use this host
+                  </button>
+                  <span style={{ color: "#94a3b8", fontSize: 12 }}>
+                    Tip: host your signaling on this LAN IP/port (default 8787)
+                  </span>
+                </div>
               </label>
               <div style={{ display: "grid", gap: 6 }}>
                 <span style={{ color: "#94a3b8", fontSize: 13 }}>Your ID</span>

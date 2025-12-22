@@ -12,7 +12,6 @@
     "vue": "^3.4.0"
   },
   "dependencies": {
-    "@webrtc-kit/core": "0.0.0",
-    "@webrtc-kit/react": "0.0.0"
+    "@webrtc-kit/core": "^0.0.1"
   }
 }
