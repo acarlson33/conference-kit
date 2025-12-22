@@ -122,7 +122,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
-import { useMeshRoom } from "@webrtc-kit/vue";
+import { useMeshRoom } from "@conference-kit/vue";
 
 const randomId = () => Math.random().toString(36).slice(2, 8);
 const peerId = randomId();

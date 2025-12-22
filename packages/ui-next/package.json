@@ -1,5 +1,5 @@
 {
-  "name": "@webrtc-kit/ui-next",
+  "name": "@conference-kit/ui-next",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,9 +20,9 @@
     "tailwindcss": ">=3.4.0"
   },
   "dependencies": {
-    "@webrtc-kit/ui-react": "^0.0.1",
-    "@webrtc-kit/react": "^0.0.1",
-    "@webrtc-kit/core": "^0.0.1"
+    "@conference-kit/ui-react": "^0.0.1",
+    "@conference-kit/react": "^0.0.1",
+    "@conference-kit/core": "^0.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.27",

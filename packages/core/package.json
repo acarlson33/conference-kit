@@ -1,5 +1,5 @@
 {
-  "name": "@webrtc-kit/core",
+  "name": "@conference-kit/core",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",

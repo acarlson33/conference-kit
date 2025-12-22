@@ -1,5 +1,5 @@
 {
-  "name": "@webrtc-kit/react",
+  "name": "@conference-kit/react",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,7 +14,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@webrtc-kit/core": "^0.0.1"
+    "@conference-kit/core": "^0.0.1"
   },
   "peerDependencies": {
     "react": ">=18.2.0"

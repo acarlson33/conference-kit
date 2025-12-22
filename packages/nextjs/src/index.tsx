@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import type { ReactNode } from "react";
 
-export * from "@webrtc-kit/react";
+export * from "@conference-kit/react";
 
 export const isClient = typeof window !== "undefined";
 

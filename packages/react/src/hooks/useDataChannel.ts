@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Peer } from "@webrtc-kit/core";
+import type { Peer } from "@conference-kit/core";
 
 export type UseDataChannelState = {
   ready: boolean;

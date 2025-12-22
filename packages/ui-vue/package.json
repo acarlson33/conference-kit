@@ -1,5 +1,5 @@
 {
-  "name": "@webrtc-kit/ui-vue",
+  "name": "@conference-kit/ui-vue",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,8 +18,8 @@
     "tailwindcss": ">=3.4.0"
   },
   "dependencies": {
-    "@webrtc-kit/vue": "^0.0.1",
-    "@webrtc-kit/core": "^0.0.1"
+    "@conference-kit/vue": "^0.0.1",
+    "@conference-kit/core": "^0.0.1"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

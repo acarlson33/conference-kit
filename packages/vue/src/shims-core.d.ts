@@ -1,4 +1,4 @@
-declare module "@webrtc-kit/core" {
+declare module "@conference-kit/core" {
   export type PeerSide = "initiator" | "responder";
   export type SignalData = RTCSessionDescriptionInit | RTCIceCandidateInit;
 

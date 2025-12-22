@@ -7,7 +7,7 @@
     "examples/nextjs": {
       "name": "webrtc-next-example",
       "dependencies": {
-        "@webrtc-kit/nextjs": "workspace:*",
+        "@conference-kit/nextjs": "workspace:*",
         "next": "^14.2.35",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
@@ -21,7 +21,7 @@
     "examples/react": {
       "name": "webrtc-react-example",
       "dependencies": {
-        "@webrtc-kit/react": "workspace:*",
+        "@conference-kit/react": "workspace:*",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
       },
@@ -36,7 +36,7 @@
     "examples/vue": {
       "name": "webrtc-vue-example",
       "dependencies": {
-        "@webrtc-kit/vue": "workspace:*",
+        "@conference-kit/vue": "workspace:*",
         "vue": "^3.5.26",
       },
       "devDependencies": {
@@ -46,17 +46,17 @@
       },
     },
     "packages/core": {
-      "name": "@webrtc-kit/core",
+      "name": "@conference-kit/core",
       "version": "0.0.1",
       "devDependencies": {
         "typescript": "^5.9.3",
       },
     },
     "packages/nextjs": {
-      "name": "@webrtc-kit/nextjs",
+      "name": "@conference-kit/nextjs",
       "version": "0.0.1",
       "dependencies": {
-        "@webrtc-kit/react": "workspace:*",
+        "@conference-kit/react": "^0.0.1",
       },
       "devDependencies": {
         "@types/react": "^18.3.27",
@@ -68,10 +68,10 @@
       },
     },
     "packages/react": {
-      "name": "@webrtc-kit/react",
+      "name": "@conference-kit/react",
       "version": "0.0.1",
       "dependencies": {
-        "@webrtc-kit/core": "workspace:*",
+        "@conference-kit/core": "^0.0.1",
       },
       "devDependencies": {
         "@types/react": "^18.3.27",
@@ -82,19 +82,19 @@
       },
     },
     "packages/signaling-server": {
-      "name": "@webrtc-kit/signaling-server",
+      "name": "@conference-kit/signaling-server",
       "version": "0.0.1",
       "devDependencies": {
         "typescript": "^5.9.3",
       },
     },
     "packages/ui-next": {
-      "name": "@webrtc-kit/ui-next",
+      "name": "@conference-kit/ui-next",
       "version": "0.0.1",
       "dependencies": {
-        "@webrtc-kit/core": "workspace:*",
-        "@webrtc-kit/react": "workspace:*",
-        "@webrtc-kit/ui-react": "workspace:*",
+        "@conference-kit/core": "^0.0.1",
+        "@conference-kit/react": "^0.0.1",
+        "@conference-kit/ui-react": "^0.0.1",
       },
       "devDependencies": {
         "@types/react": "^18.3.27",
@@ -109,11 +109,11 @@
       },
     },
     "packages/ui-react": {
-      "name": "@webrtc-kit/ui-react",
+      "name": "@conference-kit/ui-react",
       "version": "0.0.1",
       "dependencies": {
-        "@webrtc-kit/core": "workspace:*",
-        "@webrtc-kit/react": "workspace:*",
+        "@conference-kit/core": "^0.0.1",
+        "@conference-kit/react": "^0.0.1",
       },
       "devDependencies": {
         "@types/react": "^18.3.27",
@@ -127,11 +127,11 @@
       },
     },
     "packages/ui-vue": {
-      "name": "@webrtc-kit/ui-vue",
+      "name": "@conference-kit/ui-vue",
       "version": "0.0.1",
       "dependencies": {
-        "@webrtc-kit/core": "workspace:*",
-        "@webrtc-kit/vue": "workspace:*",
+        "@conference-kit/core": "^0.0.1",
+        "@conference-kit/vue": "^0.0.1",
       },
       "devDependencies": {
         "typescript": "^5.9.3",
@@ -142,10 +142,10 @@
       },
     },
     "packages/vue": {
-      "name": "@webrtc-kit/vue",
+      "name": "@conference-kit/vue",
       "version": "0.0.1",
       "dependencies": {
-        "@webrtc-kit/core": "workspace:*",
+        "@conference-kit/core": "^0.0.1",
       },
       "peerDependencies": {
         "vue": "^3.4.0",
@@ -190,6 +190,22 @@
     "@babel/traverse": ["@babel/traverse@7.28.5", "", { "dependencies": { "@babel/code-frame": "^7.27.1", "@babel/generator": "^7.28.5", "@babel/helper-globals": "^7.28.0", "@babel/parser": "^7.28.5", "@babel/template": "^7.27.2", "@babel/types": "^7.28.5", "debug": "^4.3.1" } }, "sha512-TCCj4t55U90khlYkVV/0TfkJkAkUg3jZFA3Neb7unZT8CPok7iiRfaX0F+WnqWqt7OxhOn0uBKXCw4lbL8W0aQ=="],
 
     "@babel/types": ["@babel/types@7.28.5", "", { "dependencies": { "@babel/helper-string-parser": "^7.27.1", "@babel/helper-validator-identifier": "^7.28.5" } }, "sha512-qQ5m48eI/MFLQ5PxQj4PFaprjyCTLI37ElWMmNs0K8Lk3dVeOdNpB3ks8jc7yM5CDmVC73eMVk/trk3fgmrUpA=="],
+
+    "@conference-kit/core": ["@conference-kit/core@workspace:packages/core"],
+
+    "@conference-kit/nextjs": ["@conference-kit/nextjs@workspace:packages/nextjs"],
+
+    "@conference-kit/react": ["@conference-kit/react@workspace:packages/react"],
+
+    "@conference-kit/signaling-server": ["@conference-kit/signaling-server@workspace:packages/signaling-server"],
+
+    "@conference-kit/ui-next": ["@conference-kit/ui-next@workspace:packages/ui-next"],
+
+    "@conference-kit/ui-react": ["@conference-kit/ui-react@workspace:packages/ui-react"],
+
+    "@conference-kit/ui-vue": ["@conference-kit/ui-vue@workspace:packages/ui-vue"],
+
+    "@conference-kit/vue": ["@conference-kit/vue@workspace:packages/vue"],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.7.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-PVtJr5CmLwYAU9PZDMITZoR5iAOShYREoR45EyyLrbntV50mdePTgUn4AmOw90Ifcj+x2kRjdzr1HP3RrNiHGA=="],
 
@@ -414,22 +430,6 @@
     "@vue/server-renderer": ["@vue/server-renderer@3.5.26", "", { "dependencies": { "@vue/compiler-ssr": "3.5.26", "@vue/shared": "3.5.26" }, "peerDependencies": { "vue": "3.5.26" } }, "sha512-TYKLXmrwWKSodyVuO1WAubucd+1XlLg4set0YoV+Hu8Lo79mp/YMwWV5mC5FgtsDxX3qo1ONrxFaTP1OQgy1uA=="],
 
     "@vue/shared": ["@vue/shared@3.5.26", "", {}, "sha512-7Z6/y3uFI5PRoKeorTOSXKcDj0MSasfNNltcslbFrPpcw6aXRUALq4IfJlaTRspiWIUOEZbrpM+iQGmCOiWe4A=="],
-
-    "@webrtc-kit/core": ["@webrtc-kit/core@workspace:packages/core"],
-
-    "@webrtc-kit/nextjs": ["@webrtc-kit/nextjs@workspace:packages/nextjs"],
-
-    "@webrtc-kit/react": ["@webrtc-kit/react@workspace:packages/react"],
-
-    "@webrtc-kit/signaling-server": ["@webrtc-kit/signaling-server@workspace:packages/signaling-server"],
-
-    "@webrtc-kit/ui-next": ["@webrtc-kit/ui-next@workspace:packages/ui-next"],
-
-    "@webrtc-kit/ui-react": ["@webrtc-kit/ui-react@workspace:packages/ui-react"],
-
-    "@webrtc-kit/ui-vue": ["@webrtc-kit/ui-vue@workspace:packages/ui-vue"],
-
-    "@webrtc-kit/vue": ["@webrtc-kit/vue@workspace:packages/vue"],
 
     "baseline-browser-mapping": ["baseline-browser-mapping@2.9.11", "", { "bin": { "baseline-browser-mapping": "dist/cli.js" } }, "sha512-Sg0xJUNDU1sJNGdfGWhVHX0kkZ+HWcvmVymJbj6NSgZZmW/8S9Y2HQ5euytnIgakgxN6papOAWiwDo1ctFDcoQ=="],
 

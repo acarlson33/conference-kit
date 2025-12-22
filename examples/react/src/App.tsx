@@ -4,7 +4,7 @@ import {
   StatusBadge,
   VideoPlayer,
   useMeshRoom,
-} from "@webrtc-kit/react";
+} from "@conference-kit/react";
 
 const primaryButton = {
   padding: "10px 14px",

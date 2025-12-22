@@ -4,10 +4,10 @@ Monorepo with a minimal WebRTC core, Bun-native signaling server, React/Next.js 
 
 ## Packages
 
-- `@webrtc-kit/core`: Peer wrapper (events, data channel, media helpers).
-- `@webrtc-kit/signaling-server`: Bun `Bun.serve` WebSocket signaling server.
-- `@webrtc-kit/react`: Hooks/components (`useWebRTC`, `useCall`, `useDataChannel`, `useMediaStream`, `VideoPlayer`, `AudioPlayer`).
-- `@webrtc-kit/nextjs`: Client-only re-export plus `dynamicClient` helper.
+- `@conference-kit/core`: Peer wrapper (events, data channel, media helpers).
+- `@conference-kit/signaling-server`: Bun `Bun.serve` WebSocket signaling server.
+- `@conference-kit/react`: Hooks/components (`useWebRTC`, `useCall`, `useDataChannel`, `useMediaStream`, `VideoPlayer`, `AudioPlayer`).
+- `@conference-kit/nextjs`: Client-only re-export plus `dynamicClient` helper.
 
 ## Quickstart
 

@@ -1,5 +1,5 @@
 import { ref, onMounted, onUnmounted, computed, watch } from "vue";
-import { Peer, type PeerSide, type SignalData } from "@webrtc-kit/core";
+import { Peer, type PeerSide, type SignalData } from "@conference-kit/core";
 import { SignalingClient } from "./signaling";
 
 export type MeshParticipant = {

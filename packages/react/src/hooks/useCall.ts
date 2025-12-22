@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type PeerSide, type SignalData } from "@webrtc-kit/core";
+import { type PeerSide, type SignalData } from "@conference-kit/core";
 import { useMediaStream } from "./useMediaStream";
 import { useWebRTC } from "./useWebRTC";
 import { SignalingClient } from "../signaling/SignalingClient";

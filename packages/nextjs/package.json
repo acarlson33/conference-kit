@@ -1,5 +1,5 @@
 {
-  "name": "@webrtc-kit/nextjs",
+  "name": "@conference-kit/nextjs",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,7 +14,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@webrtc-kit/react": "^0.0.1"
+    "@conference-kit/react": "^0.0.1"
   },
   "peerDependencies": {
     "next": ">=13.0.0",

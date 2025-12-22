@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { VideoPlayer, useCall, useDataChannel } from "@webrtc-kit/nextjs";
+import { VideoPlayer, useCall, useDataChannel } from "@conference-kit/nextjs";
 
 const deriveDefaultUrl = () => {
   const envHost = process.env.NEXT_PUBLIC_SIGNAL_HOST;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
-import type { Peer } from "@webrtc-kit/core";
+import type { Peer } from "@conference-kit/core";
 import { useDataChannel } from "./useDataChannel";
 
 const makeId = () => {

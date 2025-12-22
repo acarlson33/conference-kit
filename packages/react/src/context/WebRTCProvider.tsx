@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { SignalData } from "@webrtc-kit/core";
+import type { SignalData } from "@conference-kit/core";
 
 export type WebRTCContextValue = {
   onSignal?: (data: SignalData) => void;

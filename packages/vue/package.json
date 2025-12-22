@@ -1,5 +1,5 @@
 {
-  "name": "@webrtc-kit/vue",
+  "name": "@conference-kit/vue",
   "version": "0.0.1",
   "type": "module",
   "main": "dist/index.js",
@@ -12,6 +12,6 @@
     "vue": "^3.4.0"
   },
   "dependencies": {
-    "@webrtc-kit/core": "^0.0.1"
+    "@conference-kit/core": "^0.0.1"
   }
 }
