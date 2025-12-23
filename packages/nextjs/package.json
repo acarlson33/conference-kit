@@ -1,6 +1,6 @@
 {
   "name": "@conference-kit/nextjs",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,7 +14,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@conference-kit/react": "^0.0.1"
+    "@conference-kit/react": "^0.0.3"
   },
   "peerDependencies": {
     "next": ">=13.0.0",
