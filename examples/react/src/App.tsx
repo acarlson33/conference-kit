@@ -23,6 +23,9 @@ const deriveDefaultUrl = () => {
   return `${isSecure ? "wss" : "ws"}://${host}:${port}`;
 };
 
+const redactSignalUrl =
+  (import.meta.env.VITE_REDACT_SIGNAL_URL as string | undefined) === "true";
+
 const deriveLocalUrl = () => {
   const envPort = import.meta.env.VITE_SIGNAL_PORT as string | undefined;
   if (typeof window === "undefined") {
@@ -497,6 +500,7 @@ export function App() {
   const [enableWaitingRoom, setEnableWaitingRoom] = useState(true);
   const [enableHostControls, setEnableHostControls] = useState(true);
   const [enableActiveSpeaker, setEnableActiveSpeaker] = useState(true);
+  const [showSignalUrl, setShowSignalUrl] = useState(!redactSignalUrl);
 
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
@@ -604,8 +608,18 @@ export function App() {
                     background: "#0b1220",
                     color: "#e2e8f0",
                   }}
-                  value={signalingUrl}
-                  onChange={(e) => setSignalingUrl(e.target.value)}
+                  type={showSignalUrl ? "text" : "password"}
+                  value={showSignalUrl ? signalingUrl : ""}
+                  placeholder={
+                    !showSignalUrl && redactSignalUrl
+                      ? "wss://<redacted>"
+                      : "ws(s)://<host>:8787"
+                  }
+                  autoComplete="off"
+                  onChange={(e) => {
+                    setSignalingUrl(e.target.value);
+                    if (!showSignalUrl) setShowSignalUrl(true);
+                  }}
                 />
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button
@@ -614,6 +628,14 @@ export function App() {
                   >
                     Use this host
                   </button>
+                  {redactSignalUrl && (
+                    <button
+                      style={ghostButton}
+                      onClick={() => setShowSignalUrl((v) => !v)}
+                    >
+                      {showSignalUrl ? "Hide URL" : "Show URL"}
+                    </button>
+                  )}
                   <span style={{ color: "#94a3b8", fontSize: 12 }}>
                     Tip: host your signaling on this LAN IP/port (default 8787)
                   </span>

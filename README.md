@@ -16,6 +16,12 @@ Monorepo with a minimal WebRTC core, Bun-native signaling server, React/Next.js 
 2) Start signaling server: `bun run dev:signal` (ws://localhost:8787). It binds to `0.0.0.0`, so peers on your LAN can connect via `ws://<your-lan-ip>:8787` (open firewall/port 8787).
 3) Run React example: `cd examples/react && bun install && bun run dev`. You can override signaling host/port with `VITE_SIGNAL_HOST` / `VITE_SIGNAL_PORT`, otherwise it auto-uses the current host and port 8787.
 4) Run Next.js example: `cd examples/nextjs && bun install && bun run dev`. Override signaling host/port with `NEXT_PUBLIC_SIGNAL_HOST` / `NEXT_PUBLIC_SIGNAL_PORT`, otherwise it auto-uses the current host and port 8787.
+5) (Optional) Redact signaling URL in the example UIs to avoid leaking it on screen:
+
+   - React/Vue (Vite): set `VITE_REDACT_SIGNAL_URL=true`
+   - Next.js: set `NEXT_PUBLIC_REDACT_SIGNAL_URL=true`
+
+   The UI will mask the signaling URL input by default and provide a Show/Hide toggle; the underlying value is still used for the connection.
 
 Use two browser tabs. Enter different peer IDs (one auto-generated per tab), share the signaling URL, and click **Call** / **Answer**.
 

@@ -21,12 +21,14 @@ const deriveDefaultUrl = () => {
 };
 
 const defaultUrl = deriveDefaultUrl();
+const redactSignalUrl = process.env.NEXT_PUBLIC_REDACT_SIGNAL_URL === "true";
 const randomId = () => Math.random().toString(36).slice(2, 8);
 
 export default function Page() {
   const [peerId] = useState(() => randomId());
   const [targetId, setTargetId] = useState("");
   const [signalingUrl, setSignalingUrl] = useState(defaultUrl);
+  const [showSignalUrl, setShowSignalUrl] = useState(!redactSignalUrl);
   const [clientError, setClientError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -73,9 +75,28 @@ export default function Page() {
         Signaling URL
         <input
           style={{ display: "block", width: 320 }}
-          value={signalingUrl}
-          onChange={(e) => setSignalingUrl(e.target.value)}
+          type={showSignalUrl ? "text" : "password"}
+          value={showSignalUrl ? signalingUrl : ""}
+          placeholder={
+            !showSignalUrl && redactSignalUrl
+              ? "wss://<redacted>"
+              : "ws(s)://<host>:8787"
+          }
+          autoComplete="off"
+          onChange={(e) => {
+            setSignalingUrl(e.target.value);
+            if (!showSignalUrl) setShowSignalUrl(true);
+          }}
         />
+        {redactSignalUrl && (
+          <button
+            type="button"
+            style={{ marginTop: 4 }}
+            onClick={() => setShowSignalUrl((v) => !v)}
+          >
+            {showSignalUrl ? "Hide URL" : "Show URL"}
+          </button>
+        )}
       </label>
       <label style={{ display: "block", marginBottom: 8 }}>
         Target ID

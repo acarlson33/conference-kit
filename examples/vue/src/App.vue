@@ -19,9 +19,26 @@
     <section class="panel">
       <div class="field">
         <label>Signaling URL</label>
-        <input v-model="signalingUrl" />
+        <input
+          :type="showSignalUrl ? 'text' : 'password'"
+          :value="showSignalUrl ? signalingUrl : ''"
+          :placeholder="
+            !showSignalUrl && redactSignalUrl
+              ? 'wss://<redacted>'
+              : 'ws(s)://<host>:8787'
+          "
+          autocomplete="off"
+          @input="onSignalChange"
+        />
         <div class="hint">
           <button class="ghost" @click="useLocalHost">Use this host</button>
+          <button
+            v-if="redactSignalUrl"
+            class="ghost"
+            @click="showSignalUrl = !showSignalUrl"
+          >
+            {{ showSignalUrl ? "Hide URL" : "Show URL" }}
+          </button>
           <small>Default: ws(s)://&lt;host&gt;:8787</small>
         </div>
       </div>
@@ -131,6 +148,10 @@ const signalingUrl = ref(deriveDefaultUrl());
 const includeAudio = ref(true);
 const includeVideo = ref(true);
 const joined = ref(false);
+const redactSignalUrl =
+  ((import.meta as any).env?.VITE_REDACT_SIGNAL_URL as string | undefined) ===
+  "true";
+const showSignalUrl = ref(!redactSignalUrl);
 
 const mesh = useMeshRoom({
   peerId,
@@ -196,6 +217,12 @@ function deriveLocalUrl() {
   const isSecure = window.location.protocol === "https:";
   const host = window.location.hostname || "localhost";
   return `${isSecure ? "wss" : "ws"}://${host}:8787`;
+}
+
+function onSignalChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  signalingUrl.value = target.value;
+  if (!showSignalUrl.value) showSignalUrl.value = true;
 }
 
 function useLocalHost() {
