@@ -8,6 +8,7 @@ type ServerWebSocket<T> = {
   unsubscribe(topic: string): void;
   publish(topic: string, data: string): void;
   send(data: string): void;
+  close(code?: number): void;
 };
 
 declare const Bun: {
@@ -26,7 +27,13 @@ declare const Bun: {
   }) => { port: number };
 };
 
-type ClientMeta = { peerId: string; room?: string | null };
+type ClientMeta = {
+  peerId: string;
+  room?: string | null;
+  isHost?: boolean;
+  waitingRoom?: boolean;
+  admitted?: boolean;
+};
 
 type SignalPayload = {
   type: "signal";
@@ -39,12 +46,25 @@ type BroadcastPayload = {
   data: unknown;
 };
 
-type IncomingMessage = SignalPayload | BroadcastPayload;
+type ControlPayload = {
+  type: "control";
+  action: string;
+  data?: unknown;
+};
+
+type IncomingMessage = SignalPayload | BroadcastPayload | ControlPayload;
 
 type OutgoingMessage =
   | { type: "signal"; from: string; data: unknown }
   | { type: "broadcast"; from: string; room?: string | null; data: unknown }
   | PresenceMessage
+  | {
+      type: "control";
+      from: string;
+      room?: string | null;
+      action: string;
+      data?: unknown;
+    }
   | { type: "error"; message: string };
 
 type PresenceMessage = {
@@ -58,7 +78,12 @@ type PresenceMessage = {
 function parseMessage(raw: string): IncomingMessage | null {
   try {
     const parsed = JSON.parse(raw);
-    if (parsed && (parsed.type === "signal" || parsed.type === "broadcast"))
+    if (
+      parsed &&
+      (parsed.type === "signal" ||
+        parsed.type === "broadcast" ||
+        parsed.type === "control")
+    )
       return parsed;
     return null;
   } catch (error) {
@@ -71,6 +96,45 @@ const HOST = "0.0.0.0";
 const PORT = 8787;
 
 const roomMembers = new Map<string, Set<string>>();
+const waitingRooms = new Map<string, Set<string>>();
+const clients = new Map<string, ServerWebSocket<ClientMeta>>();
+
+function getHosts(room?: string | null) {
+  if (!room) return [] as ServerWebSocket<ClientMeta>[];
+  const hosts: ServerWebSocket<ClientMeta>[] = [];
+  for (const ws of clients.values()) {
+    if (ws.data.room === room && ws.data.isHost) hosts.push(ws);
+  }
+  return hosts;
+}
+
+function sendControl(
+  target: ServerWebSocket<ClientMeta>,
+  payload: {
+    action: string;
+    data?: unknown;
+    room?: string | null;
+    from?: string;
+  }
+) {
+  const message: OutgoingMessage = {
+    type: "control",
+    from: payload.from ?? "server",
+    room: payload.room,
+    action: payload.action,
+    data: payload.data,
+  };
+  target.send(JSON.stringify(message));
+}
+
+function broadcastToHosts(
+  room: string | null | undefined,
+  payload: { action: string; data?: unknown }
+) {
+  getHosts(room).forEach((hostWs) =>
+    sendControl(hostWs, { action: payload.action, data: payload.data, room })
+  );
+}
 
 // Signaling server with simple room presence
 const liveServer = Bun.serve<ClientMeta>({
@@ -80,12 +144,22 @@ const liveServer = Bun.serve<ClientMeta>({
     const url = new URL(req.url);
     const peerId = url.searchParams.get("peerId");
     const room = url.searchParams.get("room");
+    const isHost = url.searchParams.get("host") === "1";
+    const waitingRoom = url.searchParams.get("waitingRoom") === "1";
 
     if (!peerId) {
       return new Response("peerId query param is required", { status: 400 });
     }
 
-    const upgraded = bunServer.upgrade(req, { data: { peerId, room } });
+    const upgraded = bunServer.upgrade(req, {
+      data: {
+        peerId,
+        room,
+        isHost,
+        waitingRoom,
+        admitted: isHost ? true : !waitingRoom,
+      },
+    });
     if (!upgraded) {
       return new Response("WebSocket upgrade failed", { status: 500 });
     }
@@ -95,8 +169,26 @@ const liveServer = Bun.serve<ClientMeta>({
   websocket: {
     open(ws: ServerWebSocket<ClientMeta>) {
       const { peerId, room } = ws.data;
+      clients.set(peerId, ws);
       ws.subscribe(`peer:${peerId}`);
       if (room) {
+        if (ws.data.waitingRoom && !ws.data.isHost) {
+          const waiters = waitingRooms.get(room) ?? new Set<string>();
+          waiters.add(peerId);
+          waitingRooms.set(room, waiters);
+          broadcastToHosts(room, {
+            action: "waiting-list",
+            data: { waiting: Array.from(waiters) },
+          });
+          sendControl(ws, {
+            action: "waiting",
+            room,
+            data: { position: waiters.size },
+          });
+          return;
+        }
+
+        ws.data.admitted = true;
         ws.subscribe(`room:${room}`);
         const set = roomMembers.get(room) ?? new Set<string>();
         set.add(peerId);
@@ -108,9 +200,18 @@ const liveServer = Bun.serve<ClientMeta>({
           peers: Array.from(set),
           action: "join",
         };
-        // Publish to everyone in the room and also send directly so the new peer gets an immediate roster snapshot.
         ws.publish(`room:${room}`, JSON.stringify(presence));
         ws.send(JSON.stringify(presence));
+
+        // send waiting list snapshot to host
+        const pending = waitingRooms.get(room);
+        if (ws.data.isHost && pending && pending.size) {
+          sendControl(ws, {
+            action: "waiting-list",
+            room,
+            data: { waiting: Array.from(pending) },
+          });
+        }
       }
     },
     message(
@@ -151,11 +252,97 @@ const liveServer = Bun.serve<ClientMeta>({
         }
         return;
       }
+
+      if (parsed.type === "control") {
+        const room = ws.data.room;
+        if (parsed.action === "admit" && ws.data.isHost && room) {
+          const targetId = (parsed.data as any)?.peerId as string | undefined;
+          if (!targetId) return;
+          const waiters = waitingRooms.get(room);
+          const targetWs = targetId ? clients.get(targetId) : undefined;
+          if (waiters && waiters.has(targetId) && targetWs) {
+            waiters.delete(targetId);
+            waitingRooms.set(room, waiters);
+            targetWs.data.admitted = true;
+            targetWs.subscribe(`room:${room}`);
+            const set = roomMembers.get(room) ?? new Set<string>();
+            set.add(targetId);
+            roomMembers.set(room, set);
+            const presence: PresenceMessage = {
+              type: "presence",
+              room,
+              peerId: targetId,
+              peers: Array.from(set),
+              action: "join",
+            };
+            targetWs.publish(`room:${room}`, JSON.stringify(presence));
+            targetWs.send(JSON.stringify(presence));
+            broadcastToHosts(room, {
+              action: "waiting-list",
+              data: { waiting: Array.from(waiters) },
+            });
+            sendControl(targetWs, {
+              action: "admitted",
+              room,
+              from: ws.data.peerId,
+            });
+          }
+          return;
+        }
+
+        if (parsed.action === "reject" && ws.data.isHost && room) {
+          const targetId = (parsed.data as any)?.peerId as string | undefined;
+          if (!targetId) return;
+          const waiters = waitingRooms.get(room);
+          const targetWs = targetId ? clients.get(targetId) : undefined;
+          if (waiters && waiters.has(targetId) && targetWs) {
+            waiters.delete(targetId);
+            waitingRooms.set(room, waiters);
+            sendControl(targetWs, {
+              action: "rejected",
+              room,
+              from: ws.data.peerId,
+            });
+            targetWs.close();
+            broadcastToHosts(room, {
+              action: "waiting-list",
+              data: { waiting: Array.from(waiters) },
+            });
+          }
+          return;
+        }
+
+        if (parsed.action === "raise-hand" && room) {
+          broadcastToHosts(room, {
+            action: "raise-hand",
+            data: { peerId: ws.data.peerId },
+          });
+          return;
+        }
+
+        if (parsed.action === "hand-lowered" && room) {
+          broadcastToHosts(room, {
+            action: "hand-lowered",
+            data: { peerId: ws.data.peerId },
+          });
+          return;
+        }
+      }
     },
     close(ws: ServerWebSocket<ClientMeta>) {
       const { peerId, room } = ws.data;
       ws.unsubscribe(`peer:${peerId}`);
+      clients.delete(peerId);
       if (room) {
+        const waiters = waitingRooms.get(room);
+        if (waiters && waiters.delete(peerId)) {
+          waitingRooms.set(room, waiters);
+          broadcastToHosts(room, {
+            action: "waiting-list",
+            data: { waiting: Array.from(waiters) },
+          });
+          return;
+        }
         ws.unsubscribe(`room:${room}`);
         const set = roomMembers.get(room);
         if (set) {

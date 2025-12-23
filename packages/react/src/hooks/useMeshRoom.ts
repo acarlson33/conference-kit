@@ -16,6 +16,7 @@ export type UseMeshRoomOptions = {
   peerId: string;
   room: string;
   signalingUrl: string;
+  isHost?: boolean;
   mediaConstraints?: MediaStreamConstraints;
   rtcConfig?: RTCConfiguration;
   trickle?: boolean;
@@ -28,6 +29,7 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
     peerId,
     room,
     signalingUrl,
+    isHost,
     mediaConstraints,
     rtcConfig,
     trickle,
@@ -54,9 +56,18 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
         url: signalingUrl,
         peerId,
         room,
+        isHost,
+        enableWaitingRoom: features.enableWaitingRoom,
         autoReconnect,
       }),
-    [autoReconnect, peerId, room, signalingUrl]
+    [
+      autoReconnect,
+      features.enableWaitingRoom,
+      isHost,
+      peerId,
+      room,
+      signalingUrl,
+    ]
   );
 
   const peers = useRef<Map<string, Peer>>(new Map());
@@ -64,6 +75,12 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
   const [roster, setRoster] = useState<string[]>([]);
   const [participants, setParticipants] = useState<MeshParticipant[]>([]);
   const [error, setError] = useState<Error | null>(null);
+  const [waitingList, setWaitingList] = useState<string[]>([]);
+  const [inWaitingRoom, setInWaitingRoom] = useState(
+    features.enableWaitingRoom && !isHost
+  );
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
   const [signalingStatus, setSignalingStatus] = useState<
     "idle" | "connecting" | "open" | "closed"
   >("idle");
@@ -109,6 +126,7 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
   const ensurePeer = useCallback(
     (id: string, side?: PeerSide) => {
       if (id === peerId) return null;
+      if (features.enableWaitingRoom && inWaitingRoom) return null;
       const existing = peers.current.get(id);
       if (existing) return existing;
       // enableDataChannel is supported in the runtime PeerConfig but may lag in published typings; cast to satisfy TS.
@@ -204,6 +222,51 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
   }, [destroyPeer, ensurePeer, peerId, signaling]);
 
   useEffect(() => {
+    const onControl = ({ action, data }: { action: string; data?: any }) => {
+      if (action === "waiting-list") {
+        const waiting = (data?.waiting as string[]) ?? [];
+        setWaitingList(waiting);
+        return;
+      }
+      if (action === "waiting") {
+        setInWaitingRoom(true);
+        return;
+      }
+      if (action === "admitted") {
+        setInWaitingRoom(false);
+        return;
+      }
+      if (action === "rejected") {
+        setInWaitingRoom(false);
+        setError(new Error("Rejected by host"));
+        return;
+      }
+      if (action === "raise-hand") {
+        const peer = (data?.peerId as string) ?? null;
+        if (!peer) return;
+        setRaisedHands((prev) => {
+          const next = new Set(prev);
+          next.add(peer);
+          return next;
+        });
+        return;
+      }
+      if (action === "hand-lowered") {
+        const peer = (data?.peerId as string) ?? null;
+        if (!peer) return;
+        setRaisedHands((prev) => {
+          const next = new Set(prev);
+          next.delete(peer);
+          return next;
+        });
+        return;
+      }
+    };
+    signaling.on("control", onControl as any);
+    return () => signaling.off("control", onControl as any);
+  }, [signaling]);
+
+  useEffect(() => {
     const onSignal = ({ from, data }: { from: string; data: unknown }) => {
       const peer = ensurePeer(from, sideForPeer(from));
       void peer?.signal(data as SignalData);
@@ -217,9 +280,38 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
     peers.current.clear();
     setParticipants([]);
     setRoster([]);
+    setWaitingList([]);
+    setInWaitingRoom(false);
+    setRaisedHands(new Set());
     stopStream();
     signaling.close();
   }, [signaling, stopStream]);
+
+  const admitPeer = useCallback(
+    (id: string) => {
+      if (!features.enableWaitingRoom || !isHost) return;
+      signaling.sendControl("admit", { peerId: id });
+    },
+    [features.enableWaitingRoom, isHost, signaling]
+  );
+
+  const rejectPeer = useCallback(
+    (id: string) => {
+      if (!features.enableWaitingRoom || !isHost) return;
+      signaling.sendControl("reject", { peerId: id });
+    },
+    [features.enableWaitingRoom, isHost, signaling]
+  );
+
+  const raiseHand = useCallback(() => {
+    if (!features.enableHostControls) return;
+    signaling.sendControl("raise-hand", { peerId });
+  }, [features.enableHostControls, peerId, signaling]);
+
+  const lowerHand = useCallback(() => {
+    if (!features.enableHostControls) return;
+    signaling.sendControl("hand-lowered", { peerId });
+  }, [features.enableHostControls, peerId, signaling]);
 
   useEffect(() => {
     if (previousStream.current === localStream) return;
@@ -231,6 +323,75 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
     previousStream.current = localStream ?? null;
   }, [localStream]);
 
+  const analyzers = useRef<
+    Map<
+      string,
+      {
+        ctx: AudioContext;
+        analyser: AnalyserNode;
+        source: MediaStreamAudioSourceNode;
+      }
+    >
+  >(new Map());
+
+  useEffect(() => {
+    if (!features.enableActiveSpeaker) return;
+
+    const ensureAnalyzer = (id: string, stream: MediaStream) => {
+      if (analyzers.current.has(id)) return;
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyzers.current.set(id, { ctx, analyser, source });
+    };
+
+    participants.forEach((p) => {
+      if (p.remoteStream) ensureAnalyzer(p.id, p.remoteStream);
+    });
+
+    const removedIds: string[] = [];
+    analyzers.current.forEach((_value, id) => {
+      const stillPresent = participants.find(
+        (p) => p.id === id && p.remoteStream
+      );
+      if (!stillPresent) {
+        const entry = analyzers.current.get(id);
+        entry?.source.disconnect();
+        entry?.analyser.disconnect();
+        entry?.ctx.close();
+        analyzers.current.delete(id);
+        removedIds.push(id);
+      }
+    });
+
+    const interval = window.setInterval(() => {
+      let loudestId: string | null = null;
+      let loudest = 0;
+      analyzers.current.forEach((entry, id) => {
+        const data = new Uint8Array(entry.analyser.frequencyBinCount);
+        entry.analyser.getByteFrequencyData(data);
+        const avg = data.reduce((acc, v) => acc + v, 0) / data.length;
+        if (avg > loudest) {
+          loudest = avg;
+          loudestId = avg > 20 ? id : null;
+        }
+      });
+      setActiveSpeakerId((prev) => (prev === loudestId ? prev : loudestId));
+    }, 500);
+
+    return () => {
+      window.clearInterval(interval);
+      analyzers.current.forEach((entry) => {
+        entry.source.disconnect();
+        entry.analyser.disconnect();
+        entry.ctx.close();
+      });
+      analyzers.current.clear();
+    };
+  }, [features.enableActiveSpeaker, participants]);
+
   return {
     localStream,
     ready,
@@ -238,7 +399,15 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
     mediaError,
     participants,
     roster,
+    waitingList,
+    inWaitingRoom,
+    activeSpeakerId,
+    raisedHands,
     signalingStatus,
+    admitPeer,
+    rejectPeer,
+    raiseHand,
+    lowerHand,
     requestStream,
     stopStream,
     leave,

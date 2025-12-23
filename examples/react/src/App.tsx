@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ErrorBanner,
   StatusBadge,
@@ -6,34 +6,7 @@ import {
   useMeshRoom,
 } from "@conference-kit/react";
 
-const primaryButton = {
-  padding: "10px 14px",
-  borderRadius: 8,
-  border: "1px solid #334155",
-  background: "#2563eb",
-  color: "#e2e8f0",
-  fontWeight: 600,
-  cursor: "pointer",
-};
-
-const secondaryButton = {
-  padding: "10px 14px",
-  borderRadius: 8,
-  border: "1px solid #334155",
-  background: "#1e293b",
-  color: "#e2e8f0",
-  fontWeight: 600,
-  cursor: "pointer",
-};
-
-const ghostButton = {
-  padding: "10px 14px",
-  borderRadius: 8,
-  border: "1px solid #1f2937",
-  background: "#0b1220",
-  color: "#cbd5e1",
-  cursor: "pointer",
-};
+const randomId = () => Math.random().toString(36).slice(2, 8);
 
 const deriveDefaultUrl = () => {
   const envHost = import.meta.env.VITE_SIGNAL_HOST as string | undefined;
@@ -43,7 +16,6 @@ const deriveDefaultUrl = () => {
     const scheme = envHost.startsWith("ws") ? "" : "ws://";
     return `${scheme}${envHost}${envHost.includes(":") ? "" : `:${port}`}`;
   }
-
   if (typeof window === "undefined") return "ws://localhost:8787";
   const isSecure = window.location.protocol === "https:";
   const host = window.location.hostname || "localhost";
@@ -51,15 +23,54 @@ const deriveDefaultUrl = () => {
   return `${isSecure ? "wss" : "ws"}://${host}:${port}`;
 };
 
-const defaultUrl = deriveDefaultUrl();
-const randomId = () => Math.random().toString(36).slice(2, 8);
-const defaultRoom = "lobby";
-
 const deriveLocalUrl = () => {
-  if (typeof window === "undefined") return defaultUrl;
+  const envPort = import.meta.env.VITE_SIGNAL_PORT as string | undefined;
+  if (typeof window === "undefined") {
+    return envPort ? `ws://localhost:${envPort}` : "ws://localhost:8787";
+  }
+  const port = envPort ?? "8787";
   const isSecure = window.location.protocol === "https:";
   const host = window.location.hostname || "localhost";
-  return `${isSecure ? "wss" : "ws"}://${host}:8787`;
+  return `${isSecure ? "wss" : "ws"}://${host}:${port}`;
+};
+
+const defaultUrl = deriveDefaultUrl();
+const defaultRoom = "lobby";
+
+const buttonBase: CSSProperties = {
+  border: "1px solid #334155",
+  borderRadius: 10,
+  padding: "10px 14px",
+  background: "#1f2937",
+  color: "#e2e8f0",
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
+const primaryButton: CSSProperties = {
+  ...buttonBase,
+  background: "#2563eb",
+  border: "1px solid #1d4ed8",
+};
+
+const secondaryButton: CSSProperties = {
+  ...buttonBase,
+  background: "#0f172a",
+};
+
+const ghostButton: CSSProperties = {
+  ...buttonBase,
+  background: "transparent",
+};
+
+type Tile = {
+  id: string;
+  label: string;
+  stream?: MediaStream | null;
+  connection: string;
+  isActive: boolean;
+  raisedHand: boolean;
+  isSelf: boolean;
 };
 
 type RoomExperienceProps = {
@@ -68,6 +79,12 @@ type RoomExperienceProps = {
   signalingUrl: string;
   includeAudio: boolean;
   includeVideo: boolean;
+  isHost: boolean;
+  features: {
+    enableWaitingRoom: boolean;
+    enableHostControls: boolean;
+    enableActiveSpeaker: boolean;
+  };
   onLeave: () => void;
 };
 
@@ -77,65 +94,113 @@ function RoomExperience({
   signalingUrl,
   includeAudio,
   includeVideo,
+  isHost,
+  features,
   onLeave,
 }: RoomExperienceProps) {
   const mesh = useMeshRoom({
     peerId,
     room,
     signalingUrl,
+    isHost,
     mediaConstraints: { audio: includeAudio, video: includeVideo },
-    autoReconnect: true,
+    features: {
+      enableWaitingRoom: features.enableWaitingRoom,
+      enableHostControls: features.enableHostControls,
+      enableActiveSpeaker: features.enableActiveSpeaker,
+    },
   });
 
-  const activeError = mesh.mediaError?.message || mesh.error?.message || null;
-  useEffect(() => () => mesh.leave(), [mesh.leave]);
+  useEffect(() => {
+    return () => mesh.leave();
+  }, [mesh.leave]);
 
-  const tiles = useMemo(() => {
-    <div style={{ display: "grid", gap: 6 }}>
-      <div style={{ fontWeight: 600 }}>Connection tips</div>
-      <ul
-        style={{
-          paddingLeft: 18,
-          margin: 0,
-          color: "#94a3b8",
-          lineHeight: 1.5,
-        }}
-      >
-        <li>Start signaling: `bun run dev:signal` (default ws://host:8787)</li>
-        <li>
-          If the Signal badge is not green, the WebSocket isn’t reachable
-          (firewall/host/port).
-        </li>
-        <li>
-          For HTTPS pages use wss:// and a cert on the signaling host, or run
-          the page over HTTP.
-        </li>
-        <li>
-          Media capture needs a secure origin in most browsers; data-only works
-          on HTTP.
-        </li>
-      </ul>
-    </div>;
-    const remotes = mesh.participants.map((p) => ({
+  useEffect(() => {
+    if (includeAudio || includeVideo) {
+      void mesh.requestStream();
+    } else {
+      mesh.stopStream();
+    }
+  }, [includeAudio, includeVideo, mesh.requestStream, mesh.stopStream]);
+
+  const activeError = mesh.error?.message ?? mesh.mediaError?.message ?? null;
+
+  const tiles = useMemo<Tile[]>(() => {
+    const remote = mesh.participants.map((p) => ({
       id: p.id,
-      stream: p.remoteStream,
+      label: p.id,
+      stream: p.remoteStream ?? undefined,
       connection: p.connectionState,
+      isActive: mesh.activeSpeakerId === p.id,
+      raisedHand: mesh.raisedHands.has(p.id),
+      isSelf: false,
     }));
-    return [
-      {
-        id: peerId,
-        label: "You",
-        stream: mesh.localStream,
-        connection: mesh.ready ? "connected" : "new",
-      },
-      ...remotes.map((p) => ({
-        id: p.id,
-        label: p.id,
-        stream: p.stream,
-        connection: p.connection,
-      })),
-    ];
-  }, [mesh.localStream, mesh.participants, mesh.ready, peerId]);
+    const local: Tile = {
+      id: peerId,
+      label: `${peerId} (you)`,
+      stream: mesh.localStream ?? undefined,
+      connection: mesh.ready ? "local" : "idle",
+      isActive: mesh.activeSpeakerId === peerId,
+      raisedHand: mesh.raisedHands.has(peerId),
+      isSelf: true,
+    };
+    return [local, ...remote];
+  }, [
+    mesh.activeSpeakerId,
+    mesh.localStream,
+    mesh.participants,
+    mesh.raisedHands,
+    mesh.ready,
+    peerId,
+  ]);
+
+  const hasRaisedHand = mesh.raisedHands.has(peerId);
+  const audioEnabled =
+    mesh.localStream?.getAudioTracks().some((t) => t.enabled) ?? false;
+  const videoEnabled =
+    mesh.localStream?.getVideoTracks().some((t) => t.enabled) ?? false;
+
+  const mediaStatus = mesh.ready
+    ? "Media ready"
+    : mesh.requesting
+    ? "Requesting"
+    : "No media";
+
+  if (mesh.inWaitingRoom) {
+    return (
+      <div style={{ display: "grid", gap: 12 }}>
+        {activeError && <ErrorBanner message={activeError} />}
+        <div
+          style={{
+            padding: 18,
+            border: "1px solid #1f2937",
+            borderRadius: 12,
+            background: "#0f172a",
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <div style={{ fontSize: 18, fontWeight: 700 }}>Waiting room</div>
+          <div style={{ color: "#cbd5e1" }}>
+            You are waiting to be admitted by the host.
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button style={primaryButton} onClick={onLeave}>
+              Leave room
+            </button>
+            <button
+              style={ghostButton}
+              onClick={() =>
+                hasRaisedHand ? mesh.lowerHand() : mesh.raiseHand()
+              }
+            >
+              {hasRaisedHand ? "Lower hand" : "Raise hand"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -166,25 +231,25 @@ function RoomExperience({
             tone={mesh.signalingStatus === "open" ? "success" : "warn"}
           />
           <StatusBadge
-            label={
-              mesh.ready
-                ? "Media ready"
-                : mesh.requesting
-                ? "Requesting"
-                : "No media"
-            }
+            label={mediaStatus}
             tone={mesh.ready ? "success" : mesh.requesting ? "warn" : "neutral"}
           />
+          {features.enableWaitingRoom && (
+            <StatusBadge
+              label={`Waiting ${mesh.waitingList.length}`}
+              tone={mesh.waitingList.length ? "warn" : "neutral"}
+            />
+          )}
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={() => mesh.requestStream()} style={primaryButton}>
-            Request Media
+            Request media
           </button>
           <button onClick={() => mesh.stopStream()} style={ghostButton}>
-            Release Media
+            Release media
           </button>
           <button onClick={() => onLeave()} style={secondaryButton}>
-            Leave Room
+            Leave room
           </button>
         </div>
       </div>
@@ -229,7 +294,7 @@ function RoomExperience({
                 key={tile.id}
                 style={{
                   background: "#0b1220",
-                  border: "1px solid #1f2937",
+                  border: `2px solid ${tile.isActive ? "#22c55e" : "#1f2937"}`,
                   borderRadius: 10,
                   padding: 10,
                   display: "grid",
@@ -241,9 +306,13 @@ function RoomExperience({
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
+                    gap: 8,
                   }}
                 >
-                  <div style={{ fontWeight: 600 }}>{tile.label}</div>
+                  <div style={{ fontWeight: 600, display: "flex", gap: 6 }}>
+                    {tile.raisedHand && <span>✋</span>}
+                    <span>{tile.label}</span>
+                  </div>
                   <StatusBadge label={tile.connection} tone="neutral" />
                 </div>
                 <VideoPlayer
@@ -252,9 +321,9 @@ function RoomExperience({
                     width: "100%",
                     background: "#030712",
                     borderRadius: 8,
-                    minHeight: 120,
+                    minHeight: 140,
                   }}
-                  muted={tile.id === peerId}
+                  muted={tile.isSelf}
                 />
               </div>
             ))}
@@ -290,16 +359,126 @@ function RoomExperience({
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
+                  gap: 8,
                 }}
               >
                 <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{id}</span>
-                <StatusBadge
-                  label={id === peerId ? "You" : "Peer"}
-                  tone={id === peerId ? "success" : "neutral"}
-                />
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {mesh.raisedHands.has(id) && <span>✋</span>}
+                  {mesh.activeSpeakerId === id && (
+                    <StatusBadge label="Speaking" tone="success" />
+                  )}
+                  <StatusBadge
+                    label={id === peerId ? "You" : "Peer"}
+                    tone={id === peerId ? "success" : "neutral"}
+                  />
+                </div>
               </div>
             ))}
           </div>
+
+          {isHost &&
+            features.enableWaitingRoom &&
+            mesh.waitingList.length > 0 && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontWeight: 600 }}>Waiting room</div>
+                {mesh.waitingList.map((id) => (
+                  <div
+                    key={id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 10px",
+                      border: "1px solid #1f2937",
+                      borderRadius: 8,
+                      background: "#0b1220",
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{id}</span>
+                    <button
+                      style={primaryButton}
+                      onClick={() => mesh.admitPeer(id)}
+                    >
+                      Admit
+                    </button>
+                    <button
+                      style={ghostButton}
+                      onClick={() => mesh.rejectPeer(id)}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+          {features.enableHostControls && (
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 600 }}>Raised hands</div>
+              {mesh.raisedHands.size === 0 && (
+                <div style={{ color: "#94a3b8" }}>No hands raised</div>
+              )}
+              {Array.from(mesh.raisedHands).map((id) => (
+                <div key={id} style={{ color: "#e2e8f0" }}>
+                  ✋ {id}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: "#111827",
+          border: "1px solid #1f2937",
+          borderRadius: 12,
+          padding: 12,
+        }}
+      >
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            style={secondaryButton}
+            onClick={() =>
+              mesh.localStream
+                ?.getAudioTracks()
+                .forEach((track) => (track.enabled = !track.enabled))
+            }
+          >
+            {audioEnabled ? "Mute audio" : "Unmute audio"}
+          </button>
+          <button
+            style={secondaryButton}
+            onClick={() =>
+              mesh.localStream
+                ?.getVideoTracks()
+                .forEach((track) => (track.enabled = !track.enabled))
+            }
+          >
+            {videoEnabled ? "Stop video" : "Start video"}
+          </button>
+          {features.enableHostControls && (
+            <button
+              style={ghostButton}
+              onClick={() =>
+                hasRaisedHand ? mesh.lowerHand() : mesh.raiseHand()
+              }
+            >
+              {hasRaisedHand ? "Lower hand" : "Raise hand"}
+            </button>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <StatusBadge label={mediaStatus} tone="neutral" />
+          <button style={secondaryButton} onClick={onLeave}>
+            Leave room
+          </button>
         </div>
       </div>
     </div>
@@ -314,6 +493,10 @@ export function App() {
   const [includeVideo, setIncludeVideo] = useState(true);
   const [room, setRoom] = useState(defaultRoom);
   const [joined, setJoined] = useState(false);
+  const [isHost, setIsHost] = useState(false);
+  const [enableWaitingRoom, setEnableWaitingRoom] = useState(true);
+  const [enableHostControls, setEnableHostControls] = useState(true);
+  const [enableActiveSpeaker, setEnableActiveSpeaker] = useState(true);
 
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
@@ -334,6 +517,15 @@ export function App() {
   }, []);
 
   const activeError = clientError;
+
+  const featureConfig = useMemo(
+    () => ({
+      enableWaitingRoom,
+      enableHostControls,
+      enableActiveSpeaker,
+    }),
+    [enableActiveSpeaker, enableHostControls, enableWaitingRoom]
+  );
 
   return (
     <div
@@ -359,12 +551,13 @@ export function App() {
             justifyContent: "space-between",
             alignItems: "center",
             gap: 12,
+            flexWrap: "wrap",
           }}
         >
           <div>
-            <div style={{ fontSize: 24, fontWeight: 700 }}>Mesh Room</div>
+            <div style={{ fontSize: 24, fontWeight: 700 }}>Mesh room</div>
             <div style={{ color: "#94a3b8" }}>
-              Join a named room and mesh-connect to everyone present
+              Waiting rooms, host controls, and active speaker highlight.
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -374,6 +567,7 @@ export function App() {
               label={joined ? "Joined" : "Idle"}
               tone={joined ? "success" : "neutral"}
             />
+            {isHost && <StatusBadge label="Host" tone="success" />}
           </div>
         </header>
 
@@ -488,13 +682,48 @@ export function App() {
               />
             </div>
 
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={isHost}
+                  onChange={(e) => setIsHost(e.target.checked)}
+                />
+                Host role
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={enableWaitingRoom}
+                  onChange={(e) => setEnableWaitingRoom(e.target.checked)}
+                />
+                Waiting room
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={enableHostControls}
+                  onChange={(e) => setEnableHostControls(e.target.checked)}
+                />
+                Host controls (raise hand)
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={enableActiveSpeaker}
+                  onChange={(e) => setEnableActiveSpeaker(e.target.checked)}
+                />
+                Active speaker
+              </label>
+            </div>
+
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 onClick={() => setJoined(true)}
                 style={primaryButton}
                 disabled={!room.trim()}
               >
-                Join Room
+                Join room
               </button>
               <button
                 onClick={() => setJoined(false)}
@@ -519,11 +748,9 @@ export function App() {
             <div style={{ display: "grid", gap: 12 }}>
               <div style={{ fontWeight: 600 }}>How it works</div>
               <div style={{ color: "#94a3b8", lineHeight: 1.5 }}>
-                Each peer connects to the signaling server, announces presence,
-                and builds a mesh connection to everyone else in the same room.
-                Hit Join Room on multiple tabs to see the roster and tiles
-                populate. Use HTTPS for media capture if your browser requires a
-                secure origin.
+                Join multiple tabs to see the waiting room and host controls in
+                action. Hosts can admit/reject peers, everyone can raise a hand,
+                and the active speaker badge highlights who's talking.
               </div>
             </div>
           </section>
@@ -536,13 +763,15 @@ export function App() {
             signalingUrl={signalingUrl}
             includeAudio={includeAudio}
             includeVideo={includeVideo}
+            isHost={isHost}
+            features={featureConfig}
             onLeave={() => setJoined(false)}
           />
         )}
 
         <section style={{ color: "#94a3b8", fontSize: 13 }}>
-          HTTPS/LAN: use `VITE_DEV_HTTPS=true bun run dev` or Chrome flag
-          `--unsafely-treat-insecure-origin-as-secure=http://your-lan:5173` for
+          HTTPS/LAN: use VITE_DEV_HTTPS=true bun run dev or Chrome flag
+          --unsafely-treat-insecure-origin-as-secure=http://your-lan:5173 for
           media capture.
         </section>
       </div>

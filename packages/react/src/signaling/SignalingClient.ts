@@ -4,6 +4,12 @@ export type EventMap = {
   error: Error;
   signal: { from: string; data: unknown };
   broadcast: { from: string; room?: string | null; data: unknown };
+  control: {
+    action: string;
+    from: string;
+    room?: string | null;
+    data?: unknown;
+  };
   presence: {
     room?: string | null;
     peerId: string;
@@ -42,6 +48,8 @@ export type SignalingClientOptions = {
   url: string;
   peerId: string;
   room?: string | null;
+  isHost?: boolean;
+  enableWaitingRoom?: boolean;
   autoReconnect?: boolean;
   reconnectDelayMs?: number;
 };
@@ -49,6 +57,13 @@ export type SignalingClientOptions = {
 type IncomingMessage =
   | { type: "signal"; from: string; data: unknown }
   | { type: "broadcast"; from: string; room?: string | null; data: unknown }
+  | {
+      type: "control";
+      from: string;
+      room?: string | null;
+      action: string;
+      data?: unknown;
+    }
   | {
       type: "presence";
       room?: string | null;
@@ -59,7 +74,8 @@ type IncomingMessage =
 
 type OutgoingMessage =
   | { type: "signal"; to: string; data: unknown }
-  | { type: "broadcast"; data: unknown };
+  | { type: "broadcast"; data: unknown }
+  | { type: "control"; action: string; data?: unknown };
 
 export class SignalingClient {
   private ws: WebSocket | null = null;
@@ -84,10 +100,12 @@ export class SignalingClient {
       return;
     }
 
-    const { url, peerId, room } = this.options;
-    const wsUrl = `${url}?peerId=${encodeURIComponent(peerId)}${
-      room ? `&room=${encodeURIComponent(room)}` : ""
-    }`;
+    const { url, peerId, room, isHost, enableWaitingRoom } = this.options;
+    const params = new URLSearchParams({ peerId });
+    if (room) params.set("room", room);
+    if (isHost) params.set("host", "1");
+    if (enableWaitingRoom) params.set("waitingRoom", "1");
+    const wsUrl = `${url}?${params.toString()}`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.addEventListener("open", () => {
@@ -113,6 +131,13 @@ export class SignalingClient {
             peerId: parsed.peerId,
             peers: parsed.peers,
             action: parsed.action,
+          });
+        } else if (parsed.type === "control") {
+          this.emitter.emit("control", {
+            from: parsed.from,
+            room: parsed.room,
+            action: parsed.action,
+            data: parsed.data,
           });
         }
       } catch (error) {
@@ -143,6 +168,10 @@ export class SignalingClient {
 
   broadcast(data: unknown) {
     this.enqueue({ type: "broadcast", data });
+  }
+
+  sendControl(action: string, data?: unknown) {
+    this.enqueue({ type: "control", action, data });
   }
 
   on<K extends EventKey>(event: K, handler: Handler<K>) {
