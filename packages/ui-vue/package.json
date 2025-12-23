@@ -1,6 +1,6 @@
 {
   "name": "@conference-kit/ui-vue",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,8 +18,8 @@
     "tailwindcss": ">=3.4.0"
   },
   "dependencies": {
-    "@conference-kit/vue": "^0.0.3",
-    "@conference-kit/core": "^0.0.3"
+    "@conference-kit/vue": "^0.0.4",
+    "@conference-kit/core": "^0.0.4"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

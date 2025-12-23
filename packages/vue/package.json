@@ -1,6 +1,6 @@
 {
   "name": "@conference-kit/vue",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -12,6 +12,6 @@
     "vue": "^3.4.0"
   },
   "dependencies": {
-    "@conference-kit/core": "^0.0.3"
+    "@conference-kit/core": "^0.0.4"
   }
 }

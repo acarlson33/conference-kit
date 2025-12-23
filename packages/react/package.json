@@ -1,6 +1,6 @@
 {
   "name": "@conference-kit/react",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,7 +14,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@conference-kit/core": "^0.0.3"
+    "@conference-kit/core": "^0.0.4"
   },
   "peerDependencies": {
     "react": ">=18.2.0"
