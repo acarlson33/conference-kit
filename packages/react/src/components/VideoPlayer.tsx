@@ -12,12 +12,30 @@ export function VideoPlayer({
   ...props
 }: VideoPlayerProps) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  const prevStream = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    if (!ref.current || !stream) return;
-    ref.current.srcObject = stream;
+    const el = ref.current;
+    if (!el) return;
+
+    // Avoid resetting srcObject if the exact same MediaStream instance is already attached.
+    if (stream && prevStream.current !== stream) {
+      el.srcObject = stream;
+      prevStream.current = stream;
+    }
+
+    // Kick playback on mobile where autoplay can be flaky even when muted.
+    if (stream) {
+      el.play().catch(() => {
+        /* ignore autoplay rejection; user gesture will resume */
+      });
+    }
+
     return () => {
-      if (ref.current) ref.current.srcObject = null;
+      if (el) {
+        el.srcObject = null;
+        prevStream.current = null;
+      }
     };
   }, [stream]);
 
