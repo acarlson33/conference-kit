@@ -1,0 +1,14 @@
+# READ BEFORE USING
+
+These files are meant for production deployments of the package. This diectory include the following files
+
+```
+- Dockerfile
+- entrypoint.sh
+```
+
+The dockerfile is for docker containers, the entrypoint.sh works with the dockerfile.
+The entrypoint generates self signed certs for the wss (websocket secure) feature, that is the default in the package.
+It only runs if no certs are provided, but the script has to check that, so it should stay anyway.
+
+Other than that, there isn't much else here. This is just to store the files needed for easy deployment.

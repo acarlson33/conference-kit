@@ -84,6 +84,8 @@ export class SignalingClient {
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect: boolean;
   private pendingQueue: OutgoingMessage[] = [];
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 10;
 
   constructor(options: SignalingClientOptions) {
     this.options = options;
@@ -101,14 +103,38 @@ export class SignalingClient {
     }
 
     const { url, peerId, room, isHost, enableWaitingRoom } = this.options;
+
+    // Normalize URL: convert http(s):// to ws(s)://
+    let normalizedUrl = url.trim();
+    if (normalizedUrl.startsWith("https://")) {
+      normalizedUrl = "wss://" + normalizedUrl.slice(8);
+    } else if (normalizedUrl.startsWith("http://")) {
+      normalizedUrl = "ws://" + normalizedUrl.slice(7);
+    } else if (
+      !normalizedUrl.startsWith("ws://") &&
+      !normalizedUrl.startsWith("wss://")
+    ) {
+      // If no protocol, assume ws://
+      normalizedUrl = "ws://" + normalizedUrl;
+    }
+
     const params = new URLSearchParams({ peerId });
     if (room) params.set("room", room);
     if (isHost) params.set("host", "1");
     if (enableWaitingRoom) params.set("waitingRoom", "1");
-    const wsUrl = `${url}?${params.toString()}`;
-    this.ws = new WebSocket(wsUrl);
+    const wsUrl = `${normalizedUrl}?${params.toString()}`;
+    console.log("[SignalingClient] Connecting to:", wsUrl);
+    try {
+      this.ws = new WebSocket(wsUrl);
+    } catch (err) {
+      console.error("[SignalingClient] Failed to create WebSocket:", err);
+      this.emitter.emit("error", err as Error);
+      return;
+    }
 
     this.ws.addEventListener("open", () => {
+      console.log("[SignalingClient] WebSocket connected successfully");
+      this.reconnectAttempts = 0; // Reset on successful connection
       this.emitter.emit("open", undefined as void);
       this.flushQueue();
     });
@@ -146,11 +172,17 @@ export class SignalingClient {
     });
 
     this.ws.addEventListener("close", (event) => {
+      console.log(
+        "[SignalingClient] WebSocket closed:",
+        event.code,
+        event.reason
+      );
       this.emitter.emit("close", event);
       this.scheduleReconnect();
     });
 
-    this.ws.addEventListener("error", () => {
+    this.ws.addEventListener("error", (evt) => {
+      console.error("[SignalingClient] WebSocket error:", evt);
       this.emitter.emit("error", new Error("WebSocket error"));
     });
   }
@@ -200,7 +232,31 @@ export class SignalingClient {
 
   private scheduleReconnect() {
     if (!this.shouldReconnect) return;
-    const delay = this.options.reconnectDelayMs ?? 1000;
+
+    this.reconnectAttempts++;
+    if (this.reconnectAttempts > this.maxReconnectAttempts) {
+      console.warn(
+        `[SignalingClient] Max reconnection attempts (${this.maxReconnectAttempts}) reached. Giving up.`
+      );
+      this.emitter.emit(
+        "error",
+        new Error(
+          `Failed to connect after ${this.maxReconnectAttempts} attempts`
+        )
+      );
+      return;
+    }
+
+    // Exponential backoff: 1s, 2s, 4s, 8s, ... up to 30s
+    const baseDelay = this.options.reconnectDelayMs ?? 1000;
+    const delay = Math.min(
+      baseDelay * Math.pow(2, this.reconnectAttempts - 1),
+      30000
+    );
+    console.log(
+      `[SignalingClient] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
+    );
+
     if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
     this.reconnectTimeout = setTimeout(() => this.connect(), delay);
   }

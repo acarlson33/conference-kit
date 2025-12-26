@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   ErrorBanner,
   StatusBadge,
@@ -76,6 +83,50 @@ type Tile = {
   isSelf: boolean;
 };
 
+const ParticipantTile = memo(function ParticipantTile({
+  tile,
+}: {
+  tile: Tile;
+}) {
+  return (
+    <div
+      style={{
+        background: "#0b1220",
+        border: `2px solid ${tile.isActive ? "#22c55e" : "#1f2937"}`,
+        borderRadius: 10,
+        padding: 10,
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <div style={{ fontWeight: 600, display: "flex", gap: 6 }}>
+          {tile.raisedHand && <span>✋</span>}
+          <span>{tile.label}</span>
+        </div>
+        <StatusBadge label={tile.connection} tone="neutral" />
+      </div>
+      <VideoPlayer
+        stream={tile.stream}
+        style={{
+          width: "100%",
+          background: "#030712",
+          borderRadius: 8,
+          minHeight: 140,
+        }}
+        muted={tile.isSelf}
+      />
+    </div>
+  );
+});
+
 type RoomExperienceProps = {
   peerId: string;
   room: string;
@@ -101,22 +152,28 @@ function RoomExperience({
   features,
   onLeave,
 }: RoomExperienceProps) {
+  // Memoize media constraints to avoid recreating the object on every render
+  const mediaConstraints = useMemo(
+    () => ({ audio: includeAudio, video: includeVideo }),
+    [includeAudio, includeVideo]
+  );
+
   const mesh = useMeshRoom({
     peerId,
     room,
     signalingUrl,
     isHost,
-    mediaConstraints: { audio: includeAudio, video: includeVideo },
-    features: {
-      enableWaitingRoom: features.enableWaitingRoom,
-      enableHostControls: features.enableHostControls,
-      enableActiveSpeaker: features.enableActiveSpeaker,
-    },
+    mediaConstraints,
+    features, // Already memoized from parent
   });
 
+  // Use refs for cleanup to avoid effect dependency issues
+  const meshRef = useRef(mesh);
+  meshRef.current = mesh;
+
   useEffect(() => {
-    return () => mesh.leave();
-  }, [mesh.leave]);
+    return () => meshRef.current.leave();
+  }, []); // Empty deps - cleanup only runs on unmount
 
   useEffect(() => {
     if (includeAudio || includeVideo) {
@@ -124,7 +181,8 @@ function RoomExperience({
     } else {
       mesh.stopStream();
     }
-  }, [includeAudio, includeVideo, mesh.requestStream, mesh.stopStream]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeAudio, includeVideo]); // Only depend on media toggles
 
   const activeError = mesh.error?.message ?? mesh.mediaError?.message ?? null;
 
@@ -293,42 +351,7 @@ function RoomExperience({
             }}
           >
             {tiles.map((tile) => (
-              <div
-                key={tile.id}
-                style={{
-                  background: "#0b1220",
-                  border: `2px solid ${tile.isActive ? "#22c55e" : "#1f2937"}`,
-                  borderRadius: 10,
-                  padding: 10,
-                  display: "grid",
-                  gap: 8,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <div style={{ fontWeight: 600, display: "flex", gap: 6 }}>
-                    {tile.raisedHand && <span>✋</span>}
-                    <span>{tile.label}</span>
-                  </div>
-                  <StatusBadge label={tile.connection} tone="neutral" />
-                </div>
-                <VideoPlayer
-                  stream={tile.stream}
-                  style={{
-                    width: "100%",
-                    background: "#030712",
-                    borderRadius: 8,
-                    minHeight: 140,
-                  }}
-                  muted={tile.isSelf}
-                />
-              </div>
+              <ParticipantTile key={tile.id} tile={tile} />
             ))}
             {tiles.length === 0 && (
               <div style={{ color: "#94a3b8" }}>Waiting for participants…</div>
@@ -502,6 +525,25 @@ export function App() {
   const [enableActiveSpeaker, setEnableActiveSpeaker] = useState(true);
   const [showSignalUrl, setShowSignalUrl] = useState(!redactSignalUrl);
 
+  // Check for protocol mismatch (HTTPS page trying to use WS)
+  const protocolMismatch =
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    signalingUrl.startsWith("ws://");
+
+  useEffect(() => {
+    // Log connection info on mount
+    console.log("[App] Page protocol:", window?.location?.protocol);
+    console.log("[App] Signaling URL:", signalingUrl);
+    if (protocolMismatch) {
+      console.warn(
+        "[App] PROTOCOL MISMATCH: Page is HTTPS but signaling URL is WS (not WSS). " +
+          "This will fail due to mixed content restrictions. " +
+          "Either use HTTP for the page, or WSS for the signaling server."
+      );
+    }
+  }, [signalingUrl, protocolMismatch]);
+
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
       setClientError(event.message || "Unknown client error");
@@ -576,6 +618,30 @@ export function App() {
         </header>
 
         {activeError && <ErrorBanner message={activeError} />}
+
+        {protocolMismatch && (
+          <div
+            style={{
+              background: "#78350f",
+              border: "1px solid #f59e0b",
+              borderRadius: 8,
+              padding: "12px 16px",
+              color: "#fef3c7",
+              fontSize: 14,
+            }}
+          >
+            <strong>⚠️ Protocol Mismatch:</strong> This page is served over
+            HTTPS but the signaling URL uses WS (not WSS). Browsers block
+            insecure WebSocket connections from secure pages. Either:
+            <ul style={{ margin: "8px 0 0 0", paddingLeft: 20 }}>
+              <li>
+                Change the signaling URL to use <code>wss://</code>
+              </li>
+              <li>Or access this page over HTTP instead of HTTPS</li>
+              <li>Or enable TLS on the signaling server</li>
+            </ul>
+          </div>
+        )}
 
         <div
           style={{

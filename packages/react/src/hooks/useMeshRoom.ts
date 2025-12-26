@@ -117,16 +117,26 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
             },
           ];
         }
+        // Check if anything actually changed to avoid unnecessary re-renders
+        const changed = Object.keys(patch).some(
+          (key) =>
+            patch[key as keyof MeshParticipant] !==
+            existing[key as keyof MeshParticipant]
+        );
+        if (!changed) return prev;
         return prev.map((p) => (p.id === id ? { ...p, ...patch } : p));
       });
     },
     []
   );
 
+  const inWaitingRoomRef = useRef(inWaitingRoom);
+  inWaitingRoomRef.current = inWaitingRoom;
+
   const ensurePeer = useCallback(
     (id: string, side?: PeerSide) => {
       if (id === peerId) return null;
-      if (features.enableWaitingRoom && inWaitingRoom) return null;
+      if (features.enableWaitingRoom && inWaitingRoomRef.current) return null;
       const existing = peers.current.get(id);
       if (existing) return existing;
       // enableDataChannel is supported in the runtime PeerConfig but may lag in published typings; cast to satisfy TS.
@@ -169,6 +179,8 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
     },
     [
       destroyPeer,
+      features.enableDataChannel,
+      features.enableWaitingRoom,
       localStream,
       peerId,
       rtcConfig,
@@ -188,7 +200,13 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
   useEffect(() => {
     const handleOpen = () => setSignalingStatus("open");
     const handleClose = () => setSignalingStatus("closed");
-    const handleError = (err: Error) => setError(err);
+    const handleError = (err: Error) => {
+      // Only set error if it's a new error message to prevent rapid re-renders
+      setError((prev) => {
+        if (prev?.message === err.message) return prev;
+        return err;
+      });
+    };
 
     signaling.on("open", handleOpen as any);
     signaling.on("close", handleClose as any);
@@ -209,10 +227,22 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
       action: "join" | "leave";
     }) => {
       const ids = payload.peers;
-      setRoster(ids);
+      // Only update roster if changed
+      setRoster((prev) => {
+        if (
+          prev.length === ids.length &&
+          prev.every((id, i) => id === ids[i])
+        ) {
+          return prev;
+        }
+        return ids;
+      });
       ids.filter((id) => id !== peerId).forEach((id) => ensurePeer(id));
       // Remove peers no longer present
-      setParticipants((prev) => prev.filter((p) => ids.includes(p.id)));
+      setParticipants((prev) => {
+        const filtered = prev.filter((p) => ids.includes(p.id));
+        return filtered.length === prev.length ? prev : filtered;
+      });
       Array.from(peers.current.keys()).forEach((id) => {
         if (!ids.includes(id)) destroyPeer(id);
       });
@@ -225,7 +255,15 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
     const onControl = ({ action, data }: { action: string; data?: any }) => {
       if (action === "waiting-list") {
         const waiting = (data?.waiting as string[]) ?? [];
-        setWaitingList(waiting);
+        setWaitingList((prev) => {
+          if (
+            prev.length === waiting.length &&
+            prev.every((id, i) => id === waiting[i])
+          ) {
+            return prev;
+          }
+          return waiting;
+        });
         return;
       }
       if (action === "waiting") {
@@ -245,6 +283,7 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
         const peer = (data?.peerId as string) ?? null;
         if (!peer) return;
         setRaisedHands((prev) => {
+          if (prev.has(peer)) return prev;
           const next = new Set(prev);
           next.add(peer);
           return next;
@@ -255,6 +294,7 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
         const peer = (data?.peerId as string) ?? null;
         if (!peer) return;
         setRaisedHands((prev) => {
+          if (!prev.has(peer)) return prev;
           const next = new Set(prev);
           next.delete(peer);
           return next;
@@ -333,9 +373,14 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
       }
     >
   >(new Map());
+  const activeCandidate = useRef<string | null>(null);
+  const activeSince = useRef<number>(0);
+  const silenceSince = useRef<number>(0);
 
+  // Separate effect to manage analyzers based on participants
+  // This runs when participants change but doesn't recreate the interval
   useEffect(() => {
-    if (!features.enableActiveSpeaker) return;
+    if (!features.enableActiveSpeaker || signalingStatus !== "open") return;
 
     const ensureAnalyzer = (id: string, stream: MediaStream) => {
       if (analyzers.current.has(id)) return;
@@ -351,7 +396,7 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
       if (p.remoteStream) ensureAnalyzer(p.id, p.remoteStream);
     });
 
-    const removedIds: string[] = [];
+    // Cleanup analyzers for participants no longer present
     analyzers.current.forEach((_value, id) => {
       const stillPresent = participants.find(
         (p) => p.id === id && p.remoteStream
@@ -362,10 +407,29 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
         entry?.analyser.disconnect();
         entry?.ctx.close();
         analyzers.current.delete(id);
-        removedIds.push(id);
       }
     });
+  }, [features.enableActiveSpeaker, participants, signalingStatus]);
 
+  // Separate effect for the interval - only depends on feature flag and signaling status
+  useEffect(() => {
+    if (!features.enableActiveSpeaker || signalingStatus !== "open") {
+      setActiveSpeakerId((prev) => (prev === null ? prev : null));
+      analyzers.current.forEach((entry) => {
+        entry.source.disconnect();
+        entry.analyser.disconnect();
+        entry.ctx.close();
+      });
+      analyzers.current.clear();
+      activeCandidate.current = null;
+      activeSince.current = 0;
+      silenceSince.current = 0;
+      return;
+    }
+
+    const minHoldMs = 700;
+    const minLevel = 18;
+    const silenceHoldMs = 1200;
     const interval = window.setInterval(() => {
       let loudestId: string | null = null;
       let loudest = 0;
@@ -375,11 +439,33 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
         const avg = data.reduce((acc, v) => acc + v, 0) / data.length;
         if (avg > loudest) {
           loudest = avg;
-          loudestId = avg > 20 ? id : null;
+          loudestId = avg > minLevel ? id : null;
         }
       });
-      setActiveSpeakerId((prev) => (prev === loudestId ? prev : loudestId));
-    }, 500);
+
+      const now = performance.now();
+      if (loudestId !== activeCandidate.current) {
+        activeCandidate.current = loudestId;
+        activeSince.current = now;
+      }
+
+      const heldLongEnough = now - activeSince.current >= minHoldMs;
+      if (heldLongEnough) {
+        setActiveSpeakerId((prev) =>
+          prev === activeCandidate.current ? prev : activeCandidate.current
+        );
+      }
+
+      if (!loudestId) {
+        if (!silenceSince.current) silenceSince.current = now;
+        const silentLongEnough = now - silenceSince.current >= silenceHoldMs;
+        if (silentLongEnough) {
+          setActiveSpeakerId((prev) => (prev === null ? prev : null));
+        }
+      } else {
+        silenceSince.current = 0;
+      }
+    }, 400);
 
     return () => {
       window.clearInterval(interval);
@@ -389,28 +475,54 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
         entry.ctx.close();
       });
       analyzers.current.clear();
+      activeCandidate.current = null;
+      activeSince.current = 0;
+      silenceSince.current = 0;
     };
-  }, [features.enableActiveSpeaker, participants]);
+  }, [features.enableActiveSpeaker, signalingStatus]);
 
-  return {
-    localStream,
-    ready,
-    requesting,
-    mediaError,
-    participants,
-    roster,
-    waitingList,
-    inWaitingRoom,
-    activeSpeakerId,
-    raisedHands,
-    signalingStatus,
-    admitPeer,
-    rejectPeer,
-    raiseHand,
-    lowerHand,
-    requestStream,
-    stopStream,
-    leave,
-    error,
-  } as const;
+  return useMemo(
+    () => ({
+      localStream,
+      ready,
+      requesting,
+      mediaError,
+      participants,
+      roster,
+      waitingList,
+      inWaitingRoom,
+      activeSpeakerId,
+      raisedHands,
+      signalingStatus,
+      admitPeer,
+      rejectPeer,
+      raiseHand,
+      lowerHand,
+      requestStream,
+      stopStream,
+      leave,
+      error,
+    }),
+    [
+      localStream,
+      ready,
+      requesting,
+      mediaError,
+      participants,
+      roster,
+      waitingList,
+      inWaitingRoom,
+      activeSpeakerId,
+      raisedHands,
+      signalingStatus,
+      admitPeer,
+      rejectPeer,
+      raiseHand,
+      lowerHand,
+      requestStream,
+      stopStream,
+      leave,
+      error,
+    ]
+  );
 }
