@@ -187,6 +187,13 @@ function RoomExperience({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeAudio, includeVideo]); // Only depend on media toggles
 
+  // Keep display name in sync after joining (host/self can update mid-call)
+  useEffect(() => {
+    if (displayName?.trim()) {
+      mesh.setDisplayName(displayName.trim());
+    }
+  }, [displayName, mesh]);
+
   const activeError = mesh.error?.message ?? mesh.mediaError?.message ?? null;
 
   const tiles = useMemo<Tile[]>(() => {
@@ -393,7 +400,9 @@ function RoomExperience({
                   gap: 8,
                 }}
               >
-                <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{id}</span>
+                <span style={{ color: "#e2e8f0", fontWeight: 600 }}>
+                  {mesh.peerDisplayNames[id] || id}
+                </span>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   {mesh.raisedHands.has(id) && <span>✋</span>}
                   {mesh.activeSpeakerId === id && (
@@ -451,8 +460,24 @@ function RoomExperience({
                 <div style={{ color: "#94a3b8" }}>No hands raised</div>
               )}
               {Array.from(mesh.raisedHands).map((id) => (
-                <div key={id} style={{ color: "#e2e8f0" }}>
-                  ✋ {id}
+                <div
+                  key={id}
+                  style={{
+                    color: "#e2e8f0",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <span>✋ {mesh.peerDisplayNames[id] || id}</span>
+                  {isHost && (
+                    <button
+                      style={ghostButton}
+                      onClick={() => mesh.lowerHand(id)}
+                    >
+                      Lower
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

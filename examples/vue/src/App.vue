@@ -54,6 +54,31 @@
         </div>
       </div>
 
+      <div class="grid two">
+        <div class="field">
+          <label>Display Name</label>
+          <input v-model="displayName" placeholder="Your name" />
+        </div>
+        <div class="field">
+          <label>Role & Features</label>
+          <div class="chips">
+            <label><input type="checkbox" v-model="isHost" /> Host</label>
+            <label
+              ><input type="checkbox" v-model="enableWaitingRoom" /> Waiting
+              room</label
+            >
+            <label
+              ><input type="checkbox" v-model="enableHostControls" /> Host
+              controls</label
+            >
+            <label
+              ><input type="checkbox" v-model="enableActiveSpeaker" /> Active
+              speaker</label
+            >
+          </div>
+        </div>
+      </div>
+
       <div class="chips">
         <label><input type="checkbox" v-model="includeAudio" /> Audio</label>
         <label><input type="checkbox" v-model="includeVideo" /> Video</label>
@@ -78,10 +103,10 @@
       <h3>Roster ({{ mesh.roster.length }})</h3>
       <div class="list" v-if="mesh.roster.length">
         <div class="list-item" v-for="id in mesh.roster" :key="id">
-          <span>{{ id }}</span>
-          <span class="badge" :class="{ success: id === peerId }">{{
-            id === peerId ? "You" : "Peer"
-          }}</span>
+          <span>{{ peerName(id) }}</span>
+          <span class="badge" :class="{ success: id === peerId }">
+            {{ id === peerId ? "You" : "Peer" }}
+          </span>
         </div>
       </div>
       <p class="muted" v-else>No peers yet. Join from another tab.</p>
@@ -134,17 +159,68 @@
         </li>
       </ul>
     </section>
+
+    <section class="panel" v-if="mesh.raisedHands.size || enableHostControls">
+      <div class="row">
+        <h3>Raised hands</h3>
+        <span class="badge" v-if="mesh.raisedHands.size === 0">None</span>
+      </div>
+      <div class="list" v-if="mesh.raisedHands.size">
+        <div class="list-item" v-for="id in raisedHandIds" :key="id">
+          <span>✋ {{ peerName(id) }}</span>
+          <button v-if="isHost" class="ghost" @click="mesh.lowerHand(id)">
+            Lower
+          </button>
+        </div>
+      </div>
+      <div class="actions" v-else>
+        <span class="muted">No hands raised</span>
+      </div>
+      <div class="actions">
+        <button class="ghost" @click="toggleHand">
+          {{ selfRaised ? "Lower hand" : "Raise hand" }}
+        </button>
+      </div>
+    </section>
+
+    <section class="panel" v-if="mesh.inWaitingRoom">
+      <h3>Waiting room</h3>
+      <p class="muted">You are waiting to be admitted by the host.</p>
+      <div class="actions">
+        <button class="ghost" @click="leave">Leave room</button>
+        <button class="ghost" @click="toggleHand">
+          {{ selfRaised ? "Lower hand" : "Raise hand" }}
+        </button>
+      </div>
+    </section>
+
+    <section
+      class="panel"
+      v-if="isHost && enableWaitingRoom && mesh.waitingList.length"
+    >
+      <h3>Waiting list ({{ mesh.waitingList.length }})</h3>
+      <div class="list">
+        <div class="list-item" v-for="id in mesh.waitingList" :key="id">
+          <span>{{ id }}</span>
+          <div class="actions">
+            <button class="primary" @click="mesh.admitPeer(id)">Admit</button>
+            <button class="ghost" @click="mesh.rejectPeer(id)">Reject</button>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useMeshRoom } from "@conference-kit/vue";
 
 const randomId = () => Math.random().toString(36).slice(2, 8);
 const peerId = randomId();
 const room = ref("lobby");
 const signalingUrl = ref(deriveDefaultUrl());
+const displayName = ref(`Guest ${peerId.toUpperCase()}`);
 const includeAudio = ref(true);
 const includeVideo = ref(true);
 const joined = ref(false);
@@ -152,16 +228,29 @@ const redactSignalUrl =
   ((import.meta as any).env?.VITE_REDACT_SIGNAL_URL as string | undefined) ===
   "true";
 const showSignalUrl = ref(!redactSignalUrl);
+const isHost = ref(false);
+const enableWaitingRoom = ref(true);
+const enableHostControls = ref(true);
+const enableActiveSpeaker = ref(true);
+
+const features = computed(() => ({
+  enableWaitingRoom: enableWaitingRoom.value,
+  enableHostControls: enableHostControls.value,
+  enableActiveSpeaker: enableActiveSpeaker.value,
+}));
 
 const mesh = useMeshRoom({
   peerId,
+  displayName: displayName.value,
   room: room.value,
   signalingUrl: signalingUrl.value,
+  isHost: isHost.value,
   mediaConstraints: computed(() => ({
     audio: includeAudio.value,
     video: includeVideo.value,
   })).value,
   autoReconnect: true,
+  features: features.value,
 });
 
 const modeLabel = computed(() => {
@@ -174,24 +263,28 @@ const modeLabel = computed(() => {
 const tiles = computed(() => {
   const remotes = mesh.participants.map((p) => ({
     id: p.id,
+    label: peerName(p.id),
     stream: p.remoteStream,
     connection: p.connectionState,
   }));
   return [
     {
       id: peerId,
-      label: "You",
+      label: `${displayName.value} (you)`,
       stream: mesh.localStream,
       connection: mesh.ready ? "connected" : "new",
     },
     ...remotes.map((p) => ({
       id: p.id,
-      label: p.id,
+      label: p.label,
       stream: p.stream,
       connection: p.connection,
     })),
   ];
 });
+
+const raisedHandIds = computed(() => Array.from(mesh.raisedHands));
+const selfRaised = computed(() => mesh.raisedHands.has(peerId));
 
 function deriveDefaultUrl() {
   if (typeof window === "undefined") return "ws://localhost:8787";
@@ -238,6 +331,24 @@ function leave() {
   joined.value = false;
   mesh.leave();
 }
+
+function toggleHand() {
+  if (selfRaised.value) {
+    mesh.lowerHand();
+  } else {
+    mesh.raiseHand();
+  }
+}
+
+function peerName(id: string) {
+  return mesh.peerDisplayNames[id] || id;
+}
+
+watch(displayName, (next) => {
+  if (next?.trim()) {
+    mesh.setDisplayName(next.trim());
+  }
+});
 
 function bindVideo(el: HTMLVideoElement | null, stream: MediaStream | null) {
   if (!el) return;
