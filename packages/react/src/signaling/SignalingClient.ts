@@ -13,7 +13,9 @@ export type EventMap = {
   presence: {
     room?: string | null;
     peerId: string;
+    displayName?: string;
     peers: string[];
+    peerDisplayNames?: Record<string, string>;
     action: "join" | "leave";
   };
 };
@@ -47,6 +49,7 @@ function createEmitter() {
 export type SignalingClientOptions = {
   url: string;
   peerId: string;
+  displayName?: string;
   room?: string | null;
   isHost?: boolean;
   enableWaitingRoom?: boolean;
@@ -68,7 +71,9 @@ type IncomingMessage =
       type: "presence";
       room?: string | null;
       peerId: string;
+      displayName?: string;
       peers: string[];
+      peerDisplayNames?: Record<string, string>;
       action: "join" | "leave";
     };
 
@@ -102,7 +107,8 @@ export class SignalingClient {
       return;
     }
 
-    const { url, peerId, room, isHost, enableWaitingRoom } = this.options;
+    const { url, peerId, displayName, room, isHost, enableWaitingRoom } =
+      this.options;
 
     // Normalize URL: convert http(s):// to ws(s)://
     let normalizedUrl = url.trim();
@@ -119,6 +125,7 @@ export class SignalingClient {
     }
 
     const params = new URLSearchParams({ peerId });
+    if (displayName) params.set("displayName", displayName);
     if (room) params.set("room", room);
     if (isHost) params.set("host", "1");
     if (enableWaitingRoom) params.set("waitingRoom", "1");
@@ -155,7 +162,9 @@ export class SignalingClient {
           this.emitter.emit("presence", {
             room: parsed.room,
             peerId: parsed.peerId,
+            displayName: parsed.displayName,
             peers: parsed.peers,
+            peerDisplayNames: parsed.peerDisplayNames,
             action: parsed.action,
           });
         } else if (parsed.type === "control") {
@@ -204,6 +213,11 @@ export class SignalingClient {
 
   sendControl(action: string, data?: unknown) {
     this.enqueue({ type: "control", action, data });
+  }
+
+  setDisplayName(displayName: string) {
+    this.options.displayName = displayName;
+    this.sendControl("set-display-name", { displayName });
   }
 
   on<K extends EventKey>(event: K, handler: Handler<K>) {

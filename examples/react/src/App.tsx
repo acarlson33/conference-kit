@@ -129,6 +129,7 @@ const ParticipantTile = memo(function ParticipantTile({
 
 type RoomExperienceProps = {
   peerId: string;
+  displayName: string;
   room: string;
   signalingUrl: string;
   includeAudio: boolean;
@@ -144,6 +145,7 @@ type RoomExperienceProps = {
 
 function RoomExperience({
   peerId,
+  displayName,
   room,
   signalingUrl,
   includeAudio,
@@ -160,6 +162,7 @@ function RoomExperience({
 
   const mesh = useMeshRoom({
     peerId,
+    displayName,
     room,
     signalingUrl,
     isHost,
@@ -189,7 +192,7 @@ function RoomExperience({
   const tiles = useMemo<Tile[]>(() => {
     const remote = mesh.participants.map((p) => ({
       id: p.id,
-      label: p.id,
+      label: mesh.peerDisplayNames[p.id] || `Guest ${p.id.toUpperCase()}`,
       stream: p.remoteStream ?? undefined,
       connection: p.connectionState,
       isActive: mesh.activeSpeakerId === p.id,
@@ -198,7 +201,7 @@ function RoomExperience({
     }));
     const local: Tile = {
       id: peerId,
-      label: `${peerId} (you)`,
+      label: `${displayName} (you)`,
       stream: mesh.localStream ?? undefined,
       connection: mesh.ready ? "local" : "idle",
       isActive: mesh.activeSpeakerId === peerId,
@@ -207,9 +210,11 @@ function RoomExperience({
     };
     return [local, ...remote];
   }, [
+    displayName,
     mesh.activeSpeakerId,
     mesh.localStream,
     mesh.participants,
+    mesh.peerDisplayNames,
     mesh.raisedHands,
     mesh.ready,
     peerId,
@@ -513,6 +518,9 @@ function RoomExperience({
 
 export function App() {
   const [peerId] = useState(() => randomId());
+  const [displayName, setDisplayName] = useState(
+    () => `Guest ${randomId().toUpperCase()}`
+  );
   const [signalingUrl, setSignalingUrl] = useState(defaultUrl);
   const [clientError, setClientError] = useState<string | null>(null);
   const [includeAudio, setIncludeAudio] = useState(true);
@@ -737,6 +745,25 @@ export function App() {
                   placeholder="e.g. lobby"
                 />
               </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ color: "#94a3b8", fontSize: 13 }}>
+                  Display Name
+                </span>
+                <input
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #334155",
+                    background: "#0b1220",
+                    color: "#e2e8f0",
+                  }}
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Your display name"
+                />
+              </label>
             </div>
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -768,6 +795,38 @@ export function App() {
                 }
                 tone="neutral"
               />
+            </div>
+
+            <div
+              style={{
+                background: "#0f172a",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                padding: "10px 12px",
+                fontSize: 12,
+                color: "#cbd5e1",
+                lineHeight: 1.5,
+              }}
+            >
+              <div
+                style={{ fontWeight: 600, marginBottom: 6, color: "#e2e8f0" }}
+              >
+                Media Modes (select and deselect above):
+              </div>
+              <div style={{ marginBottom: 4 }}>
+                <strong>Audio + Video:</strong> Full AV experience with camera
+                and microphone
+              </div>
+              <div style={{ marginBottom: 4 }}>
+                <strong>Audio only:</strong> Voice communication without video
+              </div>
+              <div style={{ marginBottom: 4 }}>
+                <strong>Video only:</strong> Camera feed without microphone
+              </div>
+              <div>
+                <strong>Data only:</strong> Control messages without media
+                streams
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -847,6 +906,7 @@ export function App() {
         {joined && (
           <RoomExperience
             peerId={peerId}
+            displayName={displayName}
             room={room || defaultRoom}
             signalingUrl={signalingUrl}
             includeAudio={includeAudio}

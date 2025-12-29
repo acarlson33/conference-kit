@@ -39,6 +39,7 @@ declare const Bun: {
 
 type ClientMeta = {
   peerId: string;
+  displayName?: string;
   room?: string | null;
   isHost?: boolean;
   waitingRoom?: boolean;
@@ -81,7 +82,9 @@ type PresenceMessage = {
   type: "presence";
   room?: string | null;
   peerId: string;
+  displayName?: string;
   peers: string[];
+  peerDisplayNames?: Record<string, string>;
   action: "join" | "leave";
 };
 
@@ -361,6 +364,31 @@ function handleOpen(ws: ServerWebSocket<ClientMeta>) {
 
   logConnect(peerId, room, isHost ?? false, waitingRoom ?? false);
 
+  // Prevent multiple hosts in the same room (unless it's the same peer reconnecting)
+  if (room && isHost) {
+    const existingHosts = getHosts(room).filter(
+      (hostWs) => hostWs.data.peerId !== peerId
+    );
+    if (existingHosts.length > 0) {
+      sendControl(ws, {
+        action: "host-blocked",
+        room,
+        data: {
+          reason: "host-already-present",
+          hostId: existingHosts[0].data.peerId,
+        },
+      });
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          message: "A host is already present in this room",
+        } satisfies OutgoingMessage)
+      );
+      ws.close(4001);
+      return;
+    }
+  }
+
   clients.set(peerId, ws);
   ws.subscribe(`peer:${peerId}`);
   console.log(
@@ -402,11 +430,20 @@ function handleOpen(ws: ServerWebSocket<ClientMeta>) {
     set.add(peerId);
     roomMembers.set(room, set);
 
+    const peerDisplayNames: Record<string, string> = {};
+    Array.from(set).forEach((id) => {
+      const client = clients.get(id);
+      peerDisplayNames[id] =
+        client?.data?.displayName || `Guest ${id.toUpperCase()}`;
+    });
+
     const presence: PresenceMessage = {
       type: "presence",
       room,
       peerId,
+      displayName: ws.data.displayName,
       peers: Array.from(set),
+      peerDisplayNames,
       action: "join",
     };
 
@@ -414,6 +451,7 @@ function handleOpen(ws: ServerWebSocket<ClientMeta>) {
     logMessage("OUT", peerId, "presence:join", {
       room,
       peers: Array.from(set),
+      displayName: ws.data.displayName,
     });
 
     ws.publish(`room:${room}`, JSON.stringify(presence));
@@ -545,11 +583,20 @@ function handleMessage(
         set.add(targetId);
         roomMembers.set(room, set);
 
+        const peerDisplayNames: Record<string, string> = {};
+        Array.from(set).forEach((id) => {
+          const client = clients.get(id);
+          peerDisplayNames[id] =
+            client?.data?.displayName || `Guest ${id.toUpperCase()}`;
+        });
+
         const presence: PresenceMessage = {
           type: "presence",
           room,
           peerId: targetId,
+          displayName: targetWs.data.displayName,
           peers: Array.from(set),
+          peerDisplayNames,
           action: "join",
         };
 
@@ -613,10 +660,16 @@ function handleMessage(
           LOG_COLORS.reset
         } peerId=${ws.data.peerId} room=${room}`
       );
-      broadcastToHosts(room, {
+      const targetPeer =
+        ((parsed.data as any)?.peerId as string) ?? ws.data.peerId;
+      const outgoing: OutgoingMessage = {
+        type: "control",
+        from: ws.data.peerId,
+        room,
         action: "raise-hand",
-        data: { peerId: ws.data.peerId },
-      });
+        data: { peerId: targetPeer },
+      };
+      ws.publish(`room:${room}`, JSON.stringify(outgoing));
       return;
     }
 
@@ -626,10 +679,99 @@ function handleMessage(
           LOG_COLORS.reset
         } peerId=${ws.data.peerId} room=${room}`
       );
-      broadcastToHosts(room, {
+      const targetPeer =
+        ((parsed.data as any)?.peerId as string) ?? ws.data.peerId;
+      const outgoing: OutgoingMessage = {
+        type: "control",
+        from: ws.data.peerId,
+        room,
         action: "hand-lowered",
-        data: { peerId: ws.data.peerId },
+        data: { peerId: targetPeer },
+      };
+      ws.publish(`room:${room}`, JSON.stringify(outgoing));
+      return;
+    }
+
+    if (parsed.action === "handoff-host" && ws.data.isHost && room) {
+      const targetId = (parsed.data as any)?.peerId as string | undefined;
+      if (!targetId) {
+        console.warn(
+          `${LOG_COLORS.red}[${timestamp()}] Handoff failed: no targetId${
+            LOG_COLORS.reset
+          }`
+        );
+        return;
+      }
+      const targetWs = clients.get(targetId);
+      if (!targetWs || targetWs.data.room !== room) {
+        console.warn(
+          `${
+            LOG_COLORS.red
+          }[${timestamp()}] Handoff failed: target not in room${
+            LOG_COLORS.reset
+          }`
+        );
+        return;
+      }
+      ws.data.isHost = false;
+      targetWs.data.isHost = true;
+      sendControl(targetWs, {
+        action: "host-promoted",
+        room,
+        from: ws.data.peerId,
+        data: { from: ws.data.peerId },
       });
+      sendControl(ws, {
+        action: "host-demoted",
+        room,
+        data: { to: targetId },
+      });
+      console.log(
+        `${LOG_COLORS.green}[${timestamp()}] Host handoff${
+          LOG_COLORS.reset
+        } from=${ws.data.peerId} to=${targetId} room=${room}`
+      );
+      return;
+    }
+
+    if (parsed.action === "set-display-name" && room) {
+      const newDisplayName = (parsed.data as any)?.displayName as
+        | string
+        | undefined;
+      if (newDisplayName) {
+        ws.data.displayName = newDisplayName;
+        console.log(
+          `${LOG_COLORS.cyan}[${timestamp()}] Display name updated${
+            LOG_COLORS.reset
+          } peerId=${ws.data.peerId} displayName=${newDisplayName} room=${room}`
+        );
+
+        const set = roomMembers.get(room);
+        if (set) {
+          const peerDisplayNames: Record<string, string> = {};
+          Array.from(set).forEach((id) => {
+            const client = clients.get(id);
+            peerDisplayNames[id] =
+              client?.data?.displayName || `Guest ${id.toUpperCase()}`;
+          });
+
+          // Broadcast display name change to all peers in the room
+          ws.publish(
+            `room:${room}`,
+            JSON.stringify({
+              type: "control",
+              from: ws.data.peerId,
+              room,
+              action: "display-name-changed",
+              data: {
+                peerId: ws.data.peerId,
+                displayName: newDisplayName,
+                peerDisplayNames,
+              },
+            } satisfies OutgoingMessage)
+          );
+        }
+      }
       return;
     }
 
@@ -680,11 +822,19 @@ function handleClose(ws: ServerWebSocket<ClientMeta>) {
         roomMembers.set(room, set);
       }
 
+      const peerDisplayNames: Record<string, string> = {};
+      Array.from(set).forEach((id) => {
+        const client = clients.get(id);
+        peerDisplayNames[id] =
+          client?.data?.displayName || `Guest ${id.toUpperCase()}`;
+      });
+
       const presence: PresenceMessage = {
         type: "presence",
         room,
         peerId,
         peers: Array.from(set),
+        peerDisplayNames,
         action: "leave",
       };
 
@@ -746,6 +896,7 @@ async function startServer() {
       }
 
       const peerId = url.searchParams.get("peerId");
+      const displayName = url.searchParams.get("displayName") || undefined;
       const room = url.searchParams.get("room");
       const isHost = url.searchParams.get("host") === "1";
       const waitingRoom = url.searchParams.get("waitingRoom") === "1";
@@ -755,6 +906,7 @@ async function startServer() {
           LOG_COLORS.reset
         }`,
         `peerId=${peerId}`,
+        `displayName=${displayName}`,
         `room=${room}`,
         `isHost=${isHost}`,
         `waitingRoom=${waitingRoom}`
@@ -772,6 +924,7 @@ async function startServer() {
       const upgraded = bunServer.upgrade(req, {
         data: {
           peerId,
+          displayName,
           room,
           isHost,
           waitingRoom,

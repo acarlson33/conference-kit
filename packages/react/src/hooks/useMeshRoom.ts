@@ -14,6 +14,7 @@ export type MeshParticipant = {
 
 export type UseMeshRoomOptions = {
   peerId: string;
+  displayName?: string;
   room: string;
   signalingUrl: string;
   isHost?: boolean;
@@ -55,6 +56,7 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
       new SignalingClient({
         url: signalingUrl,
         peerId,
+        displayName: options.displayName,
         room,
         isHost,
         enableWaitingRoom: features.enableWaitingRoom,
@@ -76,6 +78,9 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
   const [participants, setParticipants] = useState<MeshParticipant[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [waitingList, setWaitingList] = useState<string[]>([]);
+  const [peerDisplayNames, setPeerDisplayNames] = useState<
+    Record<string, string>
+  >({});
   const [inWaitingRoom, setInWaitingRoom] = useState(
     features.enableWaitingRoom && !isHost
   );
@@ -223,9 +228,14 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
     const onPresence = (payload: {
       peers: string[];
       peerId: string;
+      displayName?: string;
+      peerDisplayNames?: Record<string, string>;
       room?: string | null;
       action: "join" | "leave";
     }) => {
+      if (payload.peerDisplayNames) {
+        setPeerDisplayNames(payload.peerDisplayNames);
+      }
       const ids = payload.peers;
       // Only update roster if changed
       setRoster((prev) => {
@@ -301,6 +311,19 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
         });
         return;
       }
+      if (action === "display-name-changed") {
+        const peerDisplayNames =
+          (data?.peerDisplayNames as Record<string, string>) ?? null;
+        if (peerDisplayNames) {
+          setPeerDisplayNames(peerDisplayNames);
+        }
+        return;
+      }
+      if (action === "host-blocked") {
+        setError(new Error("A host is already present in this room."));
+        setSignalingStatus("closed");
+        return;
+      }
     };
     signaling.on("control", onControl as any);
     return () => signaling.off("control", onControl as any);
@@ -348,10 +371,21 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
     signaling.sendControl("raise-hand", { peerId });
   }, [features.enableHostControls, peerId, signaling]);
 
-  const lowerHand = useCallback(() => {
-    if (!features.enableHostControls) return;
-    signaling.sendControl("hand-lowered", { peerId });
-  }, [features.enableHostControls, peerId, signaling]);
+  const lowerHand = useCallback(
+    (targetPeerId?: string) => {
+      if (!features.enableHostControls) return;
+      const peerTarget = targetPeerId ?? peerId;
+      signaling.sendControl("hand-lowered", { peerId: peerTarget });
+    },
+    [features.enableHostControls, peerId, signaling]
+  );
+
+  const setDisplayName = useCallback(
+    (displayName: string) => {
+      signaling.setDisplayName(displayName);
+    },
+    [signaling]
+  );
 
   useEffect(() => {
     if (previousStream.current === localStream) return;
@@ -493,11 +527,13 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
       inWaitingRoom,
       activeSpeakerId,
       raisedHands,
+      peerDisplayNames,
       signalingStatus,
       admitPeer,
       rejectPeer,
       raiseHand,
       lowerHand,
+      setDisplayName,
       requestStream,
       stopStream,
       leave,
@@ -514,11 +550,13 @@ export function useMeshRoom(options: UseMeshRoomOptions) {
       inWaitingRoom,
       activeSpeakerId,
       raisedHands,
+      peerDisplayNames,
       signalingStatus,
       admitPeer,
       rejectPeer,
       raiseHand,
       lowerHand,
+      setDisplayName,
       requestStream,
       stopStream,
       leave,
